@@ -1,65 +1,85 @@
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+"use client";
+
+import * as React from "react";
+import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Sparkles, Flame, ShieldAlert, ArrowUp, ArrowDown } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Sparkles, Flame, ShieldAlert, ArrowUp, ArrowDown, Plus } from "lucide-react";
+import Link from "next/link";
+import { useAuth } from "@/context/auth-context";
 
 export default function HomePage() {
+  const { openAuthModal } = useAuth();
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6 sm:p-24 bg-background">
-      <div className="z-10 max-w-2xl w-full items-center justify-between font-mono text-sm">
-        <div className="flex items-center justify-between pb-6 border-b border-border">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-accent flex items-center justify-center font-bold text-white shadow-glow">
+    <AppShell>
+      <div className="space-y-4">
+        {/* Quick Post Prompt Card */}
+        <Card className="curia-card">
+          <CardContent className="p-3 flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent font-bold text-xs">
               C
             </div>
-            <span className="font-sans font-bold text-xl text-foreground">Curia</span>
-          </div>
-          <Badge variant="cyan">v0.1.0 Scaffolding</Badge>
-        </div>
+            <Link
+              href="/submit"
+              className="flex-1 bg-surface-raised/70 hover:bg-surface-raised border border-border rounded-lg px-3.5 py-2 text-xs sm:text-sm text-muted-foreground transition-colors flex items-center justify-between"
+            >
+              <span>Create a post or share a technical question...</span>
+              <Plus className="h-4 w-4 text-accent shrink-0" />
+            </Link>
+          </CardContent>
+        </Card>
 
-        <div className="mt-8 space-y-6">
-          <Card className="curia-card">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-accent" />
-                <CardTitle>Design System & Token Verification</CardTitle>
-              </div>
-              <CardDescription>
-                Next.js 15 App Router + Tailwind CSS with strict dark-first tokens
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Button variant="default">Accent Primary</Button>
-                <Button variant="glow">Glow Violet-Cyan</Button>
-                <Button variant="secondary">Secondary</Button>
-                <Button variant="outline">Outline</Button>
-                <Button variant="danger">
-                  <ShieldAlert className="mr-1.5 h-4 w-4" /> Danger
-                </Button>
-                <Button variant="success">Success</Button>
-              </div>
+        {/* Welcome Showcase Card */}
+        <Card className="curia-card border-accent/20 bg-gradient-to-br from-surface via-surface to-accent/5">
+          <CardHeader className="p-4 sm:p-5 pb-2">
+            <div className="flex items-center justify-between">
+              <Badge variant="cyan" className="text-xs">
+                Next.js 15 App Router + Supabase + Gemini
+              </Badge>
+              <Badge variant="mod">
+                <Flame className="mr-1 h-3 w-3 text-upvote" /> Hot Feed
+              </Badge>
+            </div>
+            <CardTitle className="text-lg sm:text-xl font-bold mt-2">
+              Curia: Portfolio-Grade Technical Forum
+            </CardTitle>
+            <CardDescription className="text-xs sm:text-sm text-muted-foreground">
+              Dark-first Reddit alternative designed for high-signal engineering discussions, free-tier deployment, and AI moderation.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-5 pt-2 space-y-4">
+            <div className="flex flex-wrap gap-2 text-xs font-mono">
+              <span className="px-2 py-1 rounded bg-surface-raised border border-border text-foreground">
+                Row Level Security
+              </span>
+              <span className="px-2 py-1 rounded bg-surface-raised border border-border text-foreground">
+                Infinite Scroll Feed
+              </span>
+              <span className="px-2 py-1 rounded bg-surface-raised border border-border text-foreground">
+                Threaded Comments
+              </span>
+              <span className="px-2 py-1 rounded bg-surface-raised border border-border text-foreground">
+                Gemini Summarizer
+              </span>
+            </div>
 
-              <div className="flex items-center gap-4 pt-2">
-                <div className="flex items-center bg-surface-raised rounded-lg border border-border p-1">
-                  <Button variant="upvote" size="icon-sm">
-                    <ArrowUp className="h-4 w-4" />
-                  </Button>
-                  <span className="font-mono text-xs font-semibold px-2 text-foreground">
-                    +4.2k
-                  </span>
-                  <Button variant="downvote" size="icon-sm">
-                    <ArrowDown className="h-4 w-4" />
-                  </Button>
-                </div>
-                <Badge variant="mod">
-                  <Flame className="mr-1 h-3 w-3 text-upvote" /> Hot Feed
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            <div className="flex items-center gap-2 pt-2">
+              <Button size="sm" asChild>
+                <Link href="/submit">Start Discussion</Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openAuthModal("signin")}
+              >
+                Sign In / Join
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    </main>
+    </AppShell>
   );
 }
