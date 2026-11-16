@@ -60,6 +60,35 @@ function SubmitForm() {
     suggestedCommunity?: string;
   } | null>(null);
 
+  // Gemini Community Suggestions state
+  const [suggestedCommunities, setSuggestedCommunities] = React.useState<
+    Array<{ name: string; reason: string; confidence: number }>
+  >([]);
+  const [isSuggestingComm, setIsSuggestingComm] = React.useState(false);
+
+  const handleSuggestCommunities = async () => {
+    if (!title.trim()) return;
+    setIsSuggestingComm(true);
+    try {
+      const res = await fetch("/api/gemini/suggest-communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          content: contentText || contentUrl,
+        }),
+      });
+      const data = await res.json();
+      if (data.suggestions) {
+        setSuggestedCommunities(data.suggestions);
+      }
+    } catch {
+      // Ignored
+    } finally {
+      setIsSuggestingComm(false);
+    }
+  };
+
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
@@ -248,9 +277,20 @@ function SubmitForm() {
 
         {/* Community Selector */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-foreground">
-            Select Community
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-foreground">
+              Select Community
+            </label>
+            <button
+              type="button"
+              onClick={handleSuggestCommunities}
+              disabled={isSuggestingComm || !title.trim()}
+              className="text-[11px] font-mono text-accent hover:text-accent-glow flex items-center gap-1 disabled:opacity-50"
+            >
+              <Sparkles className="h-3 w-3" />
+              <span>{isSuggestingComm ? "Finding..." : "Auto-Suggest (Gemini)"}</span>
+            </button>
+          </div>
           <div className="relative">
             <select
               value={communityId}
@@ -264,6 +304,36 @@ function SubmitForm() {
               ))}
             </select>
           </div>
+
+          {/* Suggested Community Chips */}
+          {suggestedCommunities.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-mono text-muted-foreground">
+                Suggested:
+              </span>
+              {suggestedCommunities.map((s) => {
+                const matched = MOCK_COMMUNITIES.find((c) => c.name === s.name);
+                return (
+                  <button
+                    key={s.name}
+                    type="button"
+                    onClick={() => {
+                      if (matched) setCommunityId(matched.id);
+                    }}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors ${
+                      matched?.id === communityId
+                        ? "bg-accent/20 border-accent text-accent font-semibold"
+                        : "bg-surface-raised border-border text-muted-foreground hover:text-foreground hover:border-accent/40"
+                    }`}
+                    title={s.reason}
+                  >
+                    <span>c/{s.name}</span>
+                    <span className="text-[9px] opacity-70">({Math.round(s.confidence * 100)}%)</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {errorMsg && (

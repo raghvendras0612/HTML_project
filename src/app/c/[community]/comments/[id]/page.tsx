@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PostCard } from "@/components/feed/post-card";
 import { CommentForm } from "@/components/comment/comment-form";
 import { CommentTree } from "@/components/comment/comment-tree";
+import { ThreadSummarizer } from "@/components/gemini/thread-summarizer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Sparkles, Share2 } from "lucide-react";
@@ -80,6 +81,9 @@ export default async function PostDetailPage({
 
         {/* Hero Post Card */}
         <PostCard post={post} />
+
+        {/* Gemini Thread Summarizer */}
+        <ThreadSummarizer post={post} />
 
         {/* Top-level Comment Submission Form */}
         <Card className="curia-card">
