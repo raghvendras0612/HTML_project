@@ -6,6 +6,7 @@ import { LeftSidebar } from "@/components/layout/left-sidebar";
 import { RightSidebar } from "@/components/layout/right-sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { CreateCommunityModal } from "@/components/community/create-community-modal";
+import { NotificationsDrawer } from "@/components/notifications/notifications-drawer";
 import type { Community } from "@/types/database.types";
 
 interface AppShellProps {
@@ -61,6 +62,12 @@ export function AppShell({
       <CreateCommunityModal
         open={createCommunityOpen}
         onOpenChange={setCreateCommunityOpen}
+      />
+
+      {/* Notifications Drawer */}
+      <NotificationsDrawer
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
       />
     </div>
   );
