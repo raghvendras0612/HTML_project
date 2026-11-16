@@ -1,12 +1,12 @@
 import * as React from "react";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent } from "@/components/ui/card";
+import { FeedList } from "@/components/feed/feed-list";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Hash, Users, Plus, Shield, Sparkles } from "lucide-react";
+import { Hash, Users, Plus, Shield } from "lucide-react";
 import Link from "next/link";
-import { MOCK_COMMUNITIES, MOCK_POSTS } from "@/lib/mock-data";
+import { MOCK_COMMUNITIES } from "@/lib/mock-data";
 import { formatScore } from "@/lib/utils";
 
 interface CommunityPageProps {
@@ -23,10 +23,6 @@ export default async function CommunityPage({ params }: CommunityPageProps) {
   if (!community) {
     notFound();
   }
-
-  const communityPosts = MOCK_POSTS.filter(
-    (p) => p.community_id === community.id
-  );
 
   return (
     <AppShell community={community}>
@@ -87,42 +83,8 @@ export default async function CommunityPage({ params }: CommunityPageProps) {
           </Link>
         </div>
 
-        {/* Posts List Placeholder (wired to full FeedList in Task 6) */}
-        <div className="space-y-3">
-          {communityPosts.length > 0 ? (
-            communityPosts.map((post) => (
-              <Card key={post.id} className="curia-card">
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-                    <span>Posted by u/{post.author?.username}</span>
-                    <span>•</span>
-                    <span>{post.comments_count} comments</span>
-                  </div>
-                  <Link
-                    href={`/c/${community.name}/comments/${post.id}`}
-                    className="block font-bold text-base hover:text-accent transition-colors"
-                  >
-                    {post.title}
-                  </Link>
-                  {post.content_text && (
-                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                      {post.content_text}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <Card className="curia-card p-8 text-center space-y-3">
-              <p className="text-muted-foreground text-sm">
-                No posts in c/{community.name} yet. Be the first to start the discussion!
-              </p>
-              <Button size="sm" asChild>
-                <Link href={`/submit?c=${community.name}`}>Create First Post</Link>
-              </Button>
-            </Card>
-          )}
-        </div>
+        {/* Community Infinite Scroll Feed */}
+        <FeedList community={community.name} />
       </div>
     </AppShell>
   );
