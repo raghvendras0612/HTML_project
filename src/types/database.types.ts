@@ -12,7 +12,7 @@ export type VoteType = 1 | -1;
 export type NotificationType = "reply_post" | "reply_comment" | "moderation";
 export type ModeratorRole = "creator" | "moderator";
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       profiles: {
@@ -46,6 +46,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       communities: {
         Row: {
@@ -84,6 +85,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       community_members: {
         Row: {
@@ -101,6 +103,7 @@ export interface Database {
           user_id?: string;
           joined_at?: string;
         };
+        Relationships: [];
       };
       community_moderators: {
         Row: {
@@ -121,6 +124,7 @@ export interface Database {
           role?: ModeratorRole;
           added_at?: string;
         };
+        Relationships: [];
       };
       community_rules: {
         Row: {
@@ -147,6 +151,7 @@ export interface Database {
           description?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       community_bans: {
         Row: {
@@ -170,6 +175,7 @@ export interface Database {
           banned_by?: string | null;
           banned_at?: string;
         };
+        Relationships: [];
       };
       posts: {
         Row: {
@@ -227,6 +233,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       comments: {
         Row: {
@@ -271,6 +278,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       votes: {
         Row: {
@@ -297,6 +305,7 @@ export interface Database {
           vote_type?: VoteType;
           created_at?: string;
         };
+        Relationships: [];
       };
       notifications: {
         Row: {
@@ -329,7 +338,44 @@ export interface Database {
           is_read?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      calculate_hot_score: {
+        Args: {
+          p_score: number;
+          p_created_at: string;
+        };
+        Returns: number;
+      };
+      is_community_moderator: {
+        Args: {
+          p_community_id: string;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
+      is_community_banned: {
+        Args: {
+          p_community_id: string;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
+    };
+    Enums: {
+      post_content_type: PostContentType;
+      target_type: TargetType;
+      vote_type: VoteType;
+      notification_type: NotificationType;
+      moderator_role: ModeratorRole;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }

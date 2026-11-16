@@ -5,6 +5,7 @@ import { TopBar } from "@/components/layout/top-bar";
 import { LeftSidebar } from "@/components/layout/left-sidebar";
 import { RightSidebar } from "@/components/layout/right-sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { CreateCommunityModal } from "@/components/community/create-community-modal";
 import type { Community } from "@/types/database.types";
 
 interface AppShellProps {
@@ -54,6 +55,12 @@ export function AppShell({
         onCloseDrawer={() => setMobileDrawerOpen(false)}
         onOpenCreateCommunity={() => setCreateCommunityOpen(true)}
         onOpenNotifications={() => setNotificationsOpen(true)}
+      />
+
+      {/* Create Community Modal */}
+      <CreateCommunityModal
+        open={createCommunityOpen}
+        onOpenChange={setCreateCommunityOpen}
       />
     </div>
   );
