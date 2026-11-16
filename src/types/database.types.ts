@@ -24,7 +24,7 @@ export type Database = {
           bio: string | null;
           karma: number;
           created_at: string;
-          updated_at: string;
+          updated_at?: string;
         };
         Insert: {
           id: string;
@@ -59,7 +59,7 @@ export type Database = {
           creator_id: string | null;
           members_count: number;
           created_at: string;
-          updated_at: string;
+          updated_at?: string;
         };
         Insert: {
           id?: string;
@@ -195,7 +195,7 @@ export type Database = {
           hot_score: number;
           fts?: unknown;
           created_at: string;
-          updated_at: string;
+          updated_at?: string;
         };
         Insert: {
           id?: string;
@@ -248,7 +248,7 @@ export type Database = {
           depth: number;
           is_removed: boolean;
           created_at: string;
-          updated_at: string;
+          updated_at?: string;
         };
         Insert: {
           id?: string;

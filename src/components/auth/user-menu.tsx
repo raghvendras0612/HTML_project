@@ -1,23 +1,30 @@
 "use client";
 
 import * as React from "react";
-import { useAuth } from "@/context/auth-context";
+import { useUser } from "@/hooks/use-user";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/common/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatScore } from "@/lib/utils";
-import { Sparkles, LogOut, User as UserIcon, Shield } from "lucide-react";
+import { Sparkles, LogOut, User as UserIcon, Shield, Moon, Sun, Laptop } from "lucide-react";
 import Link from "next/link";
+import { useTheme } from "next-themes";
+import { useRouter } from "next/navigation";
 
 export function UserMenu() {
-  const { user, profile, openAuthModal, signOut } = useAuth();
+  const router = useRouter();
+  const { user, profile, signOut, openAuthModal } = useUser();
+  const { theme, setTheme } = useTheme();
 
   if (!user || !profile) {
     return (
@@ -25,31 +32,27 @@ export function UserMenu() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => openAuthModal("signin")}
-          className="text-xs"
+          asChild
+          className="text-xs h-8 px-3 text-muted-foreground hover:text-foreground"
         >
-          Log In
+          <Link href="/login">Log In</Link>
         </Button>
         <Button
           variant="default"
           size="sm"
-          onClick={() => openAuthModal("signup")}
-          className="text-xs shadow-glow-sm"
+          asChild
+          className="text-xs h-8 px-3 bg-accent hover:bg-accent/90 text-white shadow-glow-sm"
         >
-          Sign Up
+          <Link href="/signup">Sign Up</Link>
         </Button>
       </div>
     );
   }
 
-  const initials = (profile.display_name || profile.username || "U")
-    .substring(0, 2)
-    .toUpperCase();
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 rounded-full p-1 pl-2 transition-colors hover:bg-surface-raised border border-border focus:outline-none focus:ring-2 focus:ring-accent">
+        <button className="flex items-center gap-2 rounded-full p-1 pl-2 transition-colors hover:bg-surface-raised border border-border focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer">
           <div className="hidden sm:flex flex-col items-end text-right">
             <span className="font-mono text-xs font-semibold text-foreground leading-tight">
               u/{profile.username}
@@ -59,18 +62,17 @@ export function UserMenu() {
               {formatScore(profile.karma)} karma
             </span>
           </div>
-          <Avatar className="h-8 w-8 border border-border">
-            {profile.avatar_url && (
-              <AvatarImage src={profile.avatar_url} alt={profile.username} />
-            )}
-            <AvatarFallback>{initials}</AvatarFallback>
-          </Avatar>
+          <UserAvatar
+            src={profile.avatar_url}
+            name={profile.display_name || profile.username}
+            size="sm"
+          />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-56 bg-surface border-border">
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-semibold text-foreground">
+            <p className="text-sm font-semibold text-foreground truncate">
               {profile.display_name || profile.username}
             </p>
             <p className="font-mono text-xs text-muted-foreground">
@@ -78,27 +80,81 @@ export function UserMenu() {
             </p>
             <div className="mt-1 flex items-center gap-1.5 rounded-md bg-accent/10 px-2 py-1 text-xs font-mono text-accent">
               <Sparkles className="h-3 w-3 text-accent-glow" />
-              <span>{profile.karma} total karma</span>
+              <span>{profile.karma} karma</span>
             </div>
           </div>
         </DropdownMenuLabel>
+
         <DropdownMenuSeparator />
+
         <DropdownMenuItem asChild>
-          <Link href={`/u/${profile.username}`} className="flex items-center gap-2 cursor-pointer">
+          <Link
+            href={`/u/${profile.username}`}
+            className="flex items-center gap-2 cursor-pointer text-sm"
+          >
             <UserIcon className="h-4 w-4 text-muted-foreground" />
             <span>Profile & Posts</span>
           </Link>
         </DropdownMenuItem>
+
         <DropdownMenuItem asChild>
-          <Link href="/moderation" className="flex items-center gap-2 cursor-pointer">
+          <Link
+            href="/moderation"
+            className="flex items-center gap-2 cursor-pointer text-sm"
+          >
             <Shield className="h-4 w-4 text-muted-foreground" />
             <span>Moderation Panel</span>
           </Link>
         </DropdownMenuItem>
+
         <DropdownMenuSeparator />
+
+        {/* Theme Toggle Submenu */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer text-sm">
+            {theme === "light" ? (
+              <Sun className="h-4 w-4 text-muted-foreground" />
+            ) : theme === "dark" ? (
+              <Moon className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <Laptop className="h-4 w-4 text-muted-foreground" />
+            )}
+            <span>Theme</span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="bg-surface border-border">
+            <DropdownMenuItem
+              onClick={() => setTheme("dark")}
+              className="flex items-center gap-2 cursor-pointer text-xs"
+            >
+              <Moon className="h-3.5 w-3.5" />
+              <span>Dark {theme === "dark" && "✓"}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setTheme("light")}
+              className="flex items-center gap-2 cursor-pointer text-xs"
+            >
+              <Sun className="h-3.5 w-3.5" />
+              <span>Light {theme === "light" && "✓"}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setTheme("system")}
+              className="flex items-center gap-2 cursor-pointer text-xs"
+            >
+              <Laptop className="h-3.5 w-3.5" />
+              <span>System {theme === "system" && "✓"}</span>
+            </DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSeparator />
+
         <DropdownMenuItem
-          onClick={() => signOut()}
-          className="text-danger focus:text-danger focus:bg-danger/10 cursor-pointer"
+          onClick={async () => {
+            await signOut();
+            router.push("/");
+            router.refresh();
+          }}
+          className="text-danger focus:text-danger focus:bg-danger/10 cursor-pointer text-sm"
         >
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log Out</span>

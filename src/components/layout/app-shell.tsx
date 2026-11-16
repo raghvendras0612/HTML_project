@@ -5,8 +5,12 @@ import { TopBar } from "@/components/layout/top-bar";
 import { LeftSidebar } from "@/components/layout/left-sidebar";
 import { RightSidebar } from "@/components/layout/right-sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { CommandPalette } from "@/components/common/command-palette";
+import { OnboardingModal } from "@/components/auth/onboarding-modal";
 import { CreateCommunityModal } from "@/components/community/create-community-modal";
 import { NotificationsDrawer } from "@/components/notifications/notifications-drawer";
+import { AuthModal } from "@/components/auth/auth-modal";
+import { Toaster } from "@/components/ui/sonner";
 import type { Community } from "@/types/database.types";
 
 interface AppShellProps {
@@ -21,14 +25,28 @@ export function AppShell({
   hideRightSidebar = false,
 }: AppShellProps) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = React.useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false);
   const [createCommunityOpen, setCreateCommunityOpen] = React.useState(false);
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
 
+  // Global Ctrl+K / Cmd+K listener
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col antialiased">
       <TopBar
         onOpenMobileDrawer={() => setMobileDrawerOpen(true)}
         onOpenNotifications={() => setNotificationsOpen(true)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
       />
 
       <div className="flex-1 max-w-7xl w-full mx-auto flex justify-center pb-16 md:pb-6">
@@ -44,31 +62,35 @@ export function AppShell({
         </main>
 
         {/* Right Sidebar (Desktop only) */}
-        {!hideRightSidebar && (
-          <RightSidebar community={community} />
-        )}
+        {!hideRightSidebar && <RightSidebar community={community} />}
       </div>
 
-      {/* Mobile Navigation & Drawer */}
+      {/* Mobile Navigation & Drawer Sheet */}
       <MobileNav
         drawerOpen={mobileDrawerOpen}
         onOpenDrawer={() => setMobileDrawerOpen(true)}
         onCloseDrawer={() => setMobileDrawerOpen(false)}
         onOpenCreateCommunity={() => setCreateCommunityOpen(true)}
         onOpenNotifications={() => setNotificationsOpen(true)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
       />
 
-      {/* Create Community Modal */}
+      {/* Global Modals & Command Palette */}
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+      />
+      <OnboardingModal />
       <CreateCommunityModal
         open={createCommunityOpen}
         onOpenChange={setCreateCommunityOpen}
       />
-
-      {/* Notifications Drawer */}
       <NotificationsDrawer
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
       />
+      <AuthModal />
+      <Toaster />
     </div>
   );
 }
