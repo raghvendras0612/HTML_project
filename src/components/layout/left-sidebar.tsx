@@ -28,6 +28,35 @@ export function LeftSidebar({
   const pathname = usePathname();
   const { user, requireAuth } = useUser();
   const [joinedCommunities, setJoinedCommunities] = React.useState<{ name: string; title: string }[]>([]);
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    async function loadJoined() {
+      if (!user) {
+        setJoinedCommunities([]);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/communities?joined=true");
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.communities) {
+            setJoinedCommunities(data.communities);
+          }
+        }
+      } catch {
+        // Fallback gracefully
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    loadJoined();
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const handleCreateCommunity = () => {
     requireAuth(() => {
@@ -53,6 +82,12 @@ export function LeftSidebar({
       href: "/all",
       icon: Globe,
       active: pathname === "/all",
+    },
+    {
+      label: "Explore",
+      href: "/communities",
+      icon: Compass,
+      active: pathname === "/communities",
     },
   ];
 
@@ -112,7 +147,12 @@ export function LeftSidebar({
                 <Link
                   key={c.name}
                   href={`/c/${c.name}`}
-                  className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:bg-surface-raised hover:text-foreground transition-colors font-mono"
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-colors font-mono",
+                    pathname === `/c/${c.name}`
+                      ? "bg-accent/10 text-accent font-semibold"
+                      : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+                  )}
                 >
                   <span className="text-accent">c/</span>
                   <span className="truncate">{c.name}</span>
@@ -123,8 +163,12 @@ export function LeftSidebar({
             <div className="px-1 py-2">
               <EmptyState
                 icon={<Users className="h-5 w-5" />}
-                title="No communities yet"
-                description="Join interesting communities or launch your own technical circle."
+                title={user ? "No joined communities" : "Join communities"}
+                description={
+                  user
+                    ? "Join technical communities or create your own."
+                    : "Log in to join your favorite technical discussions."
+                }
                 actionLabel="+ Create Community"
                 onAction={handleCreateCommunity}
                 className="p-4 py-5"

@@ -4,6 +4,7 @@ import * as React from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { PostCard } from "@/components/feed/post-card";
 import { SortTabs, type SortOption, type TimeOption } from "@/components/feed/sort-tabs";
+import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import Link from "next/link";
 
 interface FeedListProps {
   community?: string;
+  feedType?: "home" | "popular" | "all";
   onSummarizePost?: (post: PostWithRelations) => void;
 }
 
@@ -21,7 +23,7 @@ interface FeedResponse {
   nextCursor: string | null;
 }
 
-export function FeedList({ community, onSummarizePost }: FeedListProps) {
+export function FeedList({ community, feedType, onSummarizePost }: FeedListProps) {
   const [sort, setSort] = React.useState<SortOption>("hot");
   const [time, setTime] = React.useState<TimeOption>("day");
 
@@ -35,9 +37,10 @@ export function FeedList({ community, onSummarizePost }: FeedListProps) {
     error,
     refetch,
   } = useInfiniteQuery<FeedResponse, Error>({
-    queryKey: ["feed", community || "all", sort, time],
+    queryKey: ["feed", community || "all", feedType || "default", sort, time],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
+      if (feedType) params.set("type", feedType);
       params.set("sort", sort);
       if (sort === "top") params.set("time", time);
       if (community) params.set("community", community);
@@ -74,6 +77,30 @@ export function FeedList({ community, onSummarizePost }: FeedListProps) {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const allPosts = data?.pages.flatMap((page) => page.posts) || [];
+
+  // Live score updates map from Realtime channel without re-ordering the feed list
+  const [scoreOverrides, setScoreOverrides] = React.useState<Record<string, number>>({});
+
+  useRealtimeChannel<{ id: string; score: number }>({
+    channelName: `feed-posts-score-updates-${community || feedType || "all"}`,
+    table: "posts",
+    event: "UPDATE",
+    onEvent: (payload) => {
+      const newRow = payload.new;
+      if (
+        newRow &&
+        "score" in newRow &&
+        "id" in newRow &&
+        typeof newRow.score === "number" &&
+        newRow.id
+      ) {
+        setScoreOverrides((prev) => ({
+          ...prev,
+          [newRow.id]: newRow.score,
+        }));
+      }
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -120,13 +147,16 @@ export function FeedList({ community, onSummarizePost }: FeedListProps) {
       {/* Posts Feed */}
       {!isLoading && allPosts.length > 0 && (
         <div className="space-y-3">
-          {allPosts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              onSummarize={onSummarizePost}
-            />
-          ))}
+          {allPosts.map((post) => {
+            const liveScore = scoreOverrides[post.id] ?? post.score;
+            return (
+              <PostCard
+                key={post.id}
+                post={{ ...post, score: liveScore }}
+                onSummarize={onSummarizePost}
+              />
+            );
+          })}
         </div>
       )}
 

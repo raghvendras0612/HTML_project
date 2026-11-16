@@ -13,11 +13,13 @@ import {
   Check,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { VoteButtons } from "@/components/common/vote-buttons";
+import { UserHoverCard } from "@/components/common/user-hover-card";
 import { cn, formatScore, formatTimeAgo } from "@/lib/utils";
 import type { PostWithRelations, VoteType } from "@/types/database.types";
 import { useAuth } from "@/context/auth-context";
+import { toast } from "sonner";
 
 interface PostCardProps {
   post: PostWithRelations;
@@ -26,120 +28,60 @@ interface PostCardProps {
 
 export function PostCard({ post, onSummarize }: PostCardProps) {
   const { user, openAuthModal, updateUserKarma } = useAuth();
-
-  // Optimistic Vote State
-  const [currentVote, setCurrentVote] = React.useState<VoteType | null>(
-    post.user_vote || null
-  );
-  const [score, setScore] = React.useState<number>(post.score);
   const [copied, setCopied] = React.useState(false);
 
-  const handleVote = async (type: VoteType) => {
-    if (!user) {
-      openAuthModal("signin");
-      return;
-    }
-
-    const previousVote = currentVote;
-    const previousScore = score;
-
-    let delta = 0;
-    let nextVote: VoteType | null = null;
-
-    if (currentVote === type) {
-      // Unvote / cancel
-      delta = -type;
-      nextVote = null;
-    } else if (currentVote !== null) {
-      // Flip vote (+1 to -1 or -1 to +1)
-      delta = type * 2;
-      nextVote = type;
-    } else {
-      // New vote
-      delta = type;
-      nextVote = type;
-    }
-
-    // Apply optimistic update immediately
-    setCurrentVote(nextVote);
-    setScore((s) => s + delta);
-    updateUserKarma(delta);
-
-    try {
-      const res = await fetch("/api/votes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          target_id: post.id,
-          target_type: "post",
-          vote_type: type,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Vote failed");
-      }
-    } catch {
-      // Rollback on error
-      setCurrentVote(previousVote);
-      setScore(previousScore);
-      updateUserKarma(-delta);
-    }
-  };
+  const communityName = post.community?.name || "all";
+  const postUrl = `/c/${communityName}/post/${post.id}`;
 
   const handleShare = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${window.location.origin}/c/${post.community?.name || "all"}/comments/${post.id}`;
-    navigator.clipboard.writeText(url);
+    const fullUrl = `${window.location.origin}${postUrl}`;
+    navigator.clipboard.writeText(fullUrl);
     setCopied(true);
+    toast.success("Link copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const communityName = post.community?.name || "all";
-  const postUrl = `/c/${communityName}/comments/${post.id}`;
+  const postType = post.type ?? post.content_type ?? "text";
+  const textBody = post.body ?? post.content_text;
+  const linkUrl = post.url ?? post.content_url;
+  const commentCount = post.comment_count ?? post.comments_count ?? 0;
+
+  // Resolve image URL
+  const imageUrl = React.useMemo(() => {
+    if (post.image_path) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      return `${supabaseUrl}/storage/v1/object/public/post-images/${post.image_path}`;
+    }
+    if (postType === "image" && linkUrl) {
+      return linkUrl;
+    }
+    return null;
+  }, [post.image_path, postType, linkUrl]);
+
+  // Extract domain for link posts
+  const domain = React.useMemo(() => {
+    if (!linkUrl) return "";
+    try {
+      return new URL(linkUrl).hostname.replace(/^www\./, "");
+    } catch {
+      return linkUrl;
+    }
+  }, [linkUrl]);
 
   return (
     <Card className="curia-card overflow-hidden hover:border-accent/40 transition-all duration-150 group">
       <CardContent className="p-0 flex">
         {/* Left: Vote Column */}
         <div className="flex flex-col items-center justify-start p-2 sm:p-2.5 bg-surface-raised/40 border-r border-border/60 shrink-0 w-11 sm:w-12">
-          <button
-            onClick={() => handleVote(1)}
-            aria-label="Upvote post"
-            className={cn(
-              "p-1 rounded-md transition-colors",
-              currentVote === 1
-                ? "text-upvote bg-upvote/15 font-bold"
-                : "text-muted-foreground hover:text-upvote hover:bg-upvote/10"
-            )}
-          >
-            <ArrowUp className="h-4 w-4 sm:h-5 sm:w-5" />
-          </button>
-
-          <span
-            className={cn(
-              "font-mono text-xs sm:text-sm font-semibold my-1 select-none",
-              currentVote === 1 && "text-upvote",
-              currentVote === -1 && "text-downvote",
-              !currentVote && "text-foreground"
-            )}
-          >
-            {formatScore(score)}
-          </span>
-
-          <button
-            onClick={() => handleVote(-1)}
-            aria-label="Downvote post"
-            className={cn(
-              "p-1 rounded-md transition-colors",
-              currentVote === -1
-                ? "text-downvote bg-downvote/15 font-bold"
-                : "text-muted-foreground hover:text-downvote hover:bg-downvote/10"
-            )}
-          >
-            <ArrowDown className="h-4 w-4 sm:h-5 sm:w-5" />
-          </button>
+          <VoteButtons
+            targetType="post"
+            targetId={post.id}
+            score={post.score}
+            myVote={post.user_vote}
+            orientation="vertical"
+          />
         </div>
 
         {/* Right: Content Column */}
@@ -147,7 +89,7 @@ export function PostCard({ post, onSummarize }: PostCardProps) {
           {/* Metadata Row */}
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground font-mono">
             {post.is_pinned && (
-              <Badge variant="mod" className="h-4 px-1.5 text-[9px] gap-1">
+              <Badge variant="outline" className="h-4 px-1.5 text-[9px] gap-1 bg-accent/10 text-accent border-accent/30">
                 <Pin className="h-2.5 w-2.5" /> Pinned
               </Badge>
             )}
@@ -162,14 +104,19 @@ export function PostCard({ post, onSummarize }: PostCardProps) {
             )}
 
             <span>•</span>
-            <span>
-              Posted by{" "}
-              <Link
-                href={`/u/${post.author?.username || "deleted"}`}
-                className="hover:underline text-muted-foreground hover:text-foreground"
+            <span className="inline-flex items-center">
+              Posted by&nbsp;
+              <UserHoverCard
+                username={post.author?.username || "deleted"}
+                initialProfile={post.author}
               >
-                u/{post.author?.username || "deleted"}
-              </Link>
+                <Link
+                  href={`/u/${post.author?.username || "deleted"}`}
+                  className="hover:underline text-muted-foreground hover:text-foreground font-semibold"
+                >
+                  u/{post.author?.username || "deleted"}
+                </Link>
+              </UserHoverCard>
             </span>
             <span>•</span>
             <span title={new Date(post.created_at).toLocaleString()}>
@@ -184,19 +131,19 @@ export function PostCard({ post, onSummarize }: PostCardProps) {
             </h2>
           </Link>
 
-          {/* Post Body: Text */}
-          {post.content_type === "text" && post.content_text && (
+          {/* Post Body: Text snippet */}
+          {postType === "text" && textBody && (
             <p className="text-xs sm:text-sm text-muted-foreground line-clamp-3 leading-relaxed font-sans">
-              {post.content_text}
+              {textBody}
             </p>
           )}
 
-          {/* Post Body: Image */}
-          {post.content_type === "image" && post.content_url && (
+          {/* Post Body: Image preview */}
+          {postType === "image" && imageUrl && (
             <div className="rounded-lg overflow-hidden border border-border bg-black/40 max-h-96 flex items-center justify-center my-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={post.content_url}
+                src={imageUrl}
                 alt={post.title}
                 className="max-h-96 w-full object-contain"
                 loading="lazy"
@@ -204,16 +151,17 @@ export function PostCard({ post, onSummarize }: PostCardProps) {
             </div>
           )}
 
-          {/* Post Body: Link */}
-          {post.content_type === "link" && post.content_url && (
+          {/* Post Body: Link domain badge */}
+          {postType === "link" && linkUrl && (
             <a
-              href={post.content_url}
+              href={linkUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-raised border border-border text-xs text-accent hover:border-accent/50 font-mono transition-colors my-1"
             >
               <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate max-w-xs">{post.content_url}</span>
+              <span className="font-semibold">{domain}</span>
             </a>
           )}
 
@@ -225,7 +173,7 @@ export function PostCard({ post, onSummarize }: PostCardProps) {
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-surface-raised hover:text-foreground transition-colors"
             >
               <MessageSquare className="h-3.5 w-3.5" />
-              <span>{post.comments_count} comments</span>
+              <span>{commentCount} comments</span>
             </Link>
 
             {/* Share button */}
@@ -246,18 +194,19 @@ export function PostCard({ post, onSummarize }: PostCardProps) {
               )}
             </button>
 
-            {/* Gemini AI Summarizer shortcut */}
+            {/* Gemini AI Summarizer shortcut if callback passed */}
             {onSummarize && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   onSummarize(post);
                 }}
-                className="ml-auto hidden sm:flex items-center gap-1 px-2 py-1 rounded bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20 text-[11px] transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent/10 text-accent transition-colors ml-auto"
                 title="Summarize thread with Gemini AI"
               >
-                <Sparkles className="h-3 w-3 text-accent-glow" />
-                <span>AI TL;DR</span>
+                <Sparkles className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">AI Summary</span>
               </button>
             )}
           </div>

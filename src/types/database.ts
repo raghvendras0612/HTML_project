@@ -153,6 +153,7 @@ export type Database = {
           search_tsv?: string;
           created_at: string;
           hot_rank: number;
+          moderation_verdict?: string | null;
         };
         Insert: {
           id?: string;
@@ -170,6 +171,7 @@ export type Database = {
           removed_by?: string | null;
           created_at?: string;
           hot_rank?: number;
+          moderation_verdict?: string | null;
         };
         Update: {
           id?: string;
@@ -187,6 +189,7 @@ export type Database = {
           removed_by?: string | null;
           created_at?: string;
           hot_rank?: number;
+          moderation_verdict?: string | null;
         };
         Relationships: [];
       };
@@ -202,6 +205,7 @@ export type Database = {
           score: number;
           is_removed: boolean;
           created_at: string;
+          moderation_verdict?: string | null;
         };
         Insert: {
           id?: string;
@@ -214,6 +218,7 @@ export type Database = {
           score?: number;
           is_removed?: boolean;
           created_at?: string;
+          moderation_verdict?: string | null;
         };
         Update: {
           id?: string;
@@ -226,6 +231,7 @@ export type Database = {
           score?: number;
           is_removed?: boolean;
           created_at?: string;
+          moderation_verdict?: string | null;
         };
         Relationships: [];
       };
@@ -316,6 +322,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      ai_cache: {
+        Row: {
+          id: string;
+          content_hash: string;
+          result: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          content_hash: string;
+          result: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          content_hash?: string;
+          result?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -365,3 +392,4 @@ export type Comment = Database["public"]["Tables"]["comments"]["Row"];
 export type Vote = Database["public"]["Tables"]["votes"]["Row"];
 export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
 export type Report = Database["public"]["Tables"]["reports"]["Row"];
+export type AICache = Database["public"]["Tables"]["ai_cache"]["Row"];

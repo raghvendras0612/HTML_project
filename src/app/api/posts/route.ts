@@ -1,41 +1,31 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import * as z from "zod";
-import type { Database } from "@/types/database.types";
-
-const createPostSchema = z.object({
-  community_id: z.string().uuid("Invalid community ID"),
-  title: z
-    .string()
-    .min(1, "Title is required")
-    .max(300, "Title must be at most 300 characters"),
-  content_type: z.enum(["text", "image", "link"]),
-  content_text: z.string().optional().nullable(),
-  content_url: z.string().url("Invalid URL").optional().nullable(),
-});
+import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createPostSchema } from "@/lib/validations/community-and-post";
+import type { Database } from "@/types/database";
 
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
+    const admin = createAdminClient();
     const {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized — please log in" }, { status: 401 });
     }
 
     const body = await request.json();
     const validated = createPostSchema.parse(body);
 
-    // Verify user is not banned from this community
-    const { data: ban } = await supabase
+    // 1. Verify user is NOT banned from this community
+    const { data: ban } = await admin
       .from("community_bans")
       .select("community_id")
       .eq("community_id", validated.community_id)
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
     if (ban) {
       return NextResponse.json(
@@ -44,42 +34,102 @@ export async function POST(request: Request) {
       );
     }
 
-    const postInsert: Database["public"]["Tables"]["posts"]["Insert"] = {
-      community_id: validated.community_id,
-      author_id: user.id,
-      title: validated.title,
-      content_type: validated.content_type,
-      content_text: validated.content_text || null,
-      content_url: validated.content_url || null,
-      score: 0,
-      upvotes_count: 0,
-      downvotes_count: 0,
-      comments_count: 0,
-      is_pinned: false,
-      is_removed: false,
-      hot_score: 0,
-    };
+    // 2. Join-Gate: Verify user is a member of this community
+    const { data: membership } = await admin
+      .from("community_members")
+      .select("role")
+      .eq("community_id", validated.community_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-    // Insert post
-    const { data: post, error: insertError } = await supabase
-      .from("posts")
-      .insert(postInsert)
-      .select(`
-        *,
-        author:profiles(*),
-        community:communities(*)
-      `)
-      .single();
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 400 });
+    if (!membership) {
+      return NextResponse.json(
+        { error: "You must join this community before posting." },
+        { status: 403 }
+      );
     }
 
-    return NextResponse.json({ post }, { status: 201 });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
+    // 3. Rate limit: max 10 posts per hour per user
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentPostsCount } = await admin
+      .from("posts")
+      .select("id", { count: "exact", head: true })
+      .eq("author_id", user.id)
+      .gte("created_at", oneHourAgo);
+
+    if ((recentPostsCount || 0) >= 10) {
       return NextResponse.json(
-        { error: err.errors[0].message },
+        {
+          error:
+            "Post creation rate limit exceeded. You can create at most 10 posts per hour. Please wait before posting again.",
+        },
+        { status: 429 }
+      );
+    }
+
+    const postInsert: Record<string, unknown> = {
+      community_id: validated.community_id,
+      author_id: user.id,
+      type: validated.type,
+      title: validated.title,
+      body: validated.body || null,
+      url: validated.url || null,
+      image_path: validated.image_path || null,
+      score: 0,
+      comment_count: 0,
+      is_pinned: false,
+      is_removed: false,
+      hot_rank: 0,
+    };
+
+    if (validated.moderation_verdict) {
+      postInsert.moderation_verdict = validated.moderation_verdict;
+    }
+
+    // Insert post into database with graceful fallback if remote DB lacks moderation_verdict column
+    let { data: post, error: insertError } = await admin
+      .from("posts")
+      .insert(postInsert as any)
+      .select()
+      .single();
+
+    if (insertError && (insertError.message?.includes("moderation_verdict") || insertError.code === "42703")) {
+      const fallbackInsert = { ...postInsert };
+      delete fallbackInsert.moderation_verdict;
+      const retryResult = await admin
+        .from("posts")
+        .insert(fallbackInsert as any)
+        .select()
+        .single();
+      post = retryResult.data;
+      insertError = retryResult.error;
+    }
+
+    if (insertError || !post) {
+      return NextResponse.json(
+        { error: insertError?.message || "Failed to create post" },
+        { status: 400 }
+      );
+    }
+
+    // Attach author profile and community
+    const [{ data: author }, { data: comm }] = await Promise.all([
+      admin.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+      admin.from("communities").select("*").eq("id", validated.community_id).maybeSingle(),
+    ]);
+
+    const enrichedPost = {
+      ...post,
+      author,
+      community: comm,
+      user_vote: null,
+    };
+
+    return NextResponse.json({ post: enrichedPost }, { status: 201 });
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "errors" in err && Array.isArray((err as { errors: { message: string }[] }).errors)) {
+      return NextResponse.json(
+        { error: (err as { errors: { message: string }[] }).errors[0].message },
         { status: 400 }
       );
     }

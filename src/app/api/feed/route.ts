@@ -1,85 +1,69 @@
 import { NextResponse } from "next/server";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { createClient, createAdminClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { MOCK_POSTS } from "@/lib/mock-data";
 import type { PostWithRelations, VoteType } from "@/types/database.types";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const sort = searchParams.get("sort") || "hot";
-  const time = searchParams.get("time") || "day";
+  const feedType = searchParams.get("type") || "home"; // home | popular | all
+  const sort = searchParams.get("sort") || "hot"; // hot | new | top
+  const time = searchParams.get("time") || "day"; // day | week | month | year | all
   const community = searchParams.get("community");
   const cursor = searchParams.get("cursor");
   const limit = parseInt(searchParams.get("limit") || "10", 10);
-
-  // If Supabase is unconfigured, serve sorted mock posts
-  if (!isSupabaseConfigured()) {
-    let posts = [...MOCK_POSTS];
-
-    if (community) {
-      posts = posts.filter(
-        (p) => p.community?.name.toLowerCase() === community.toLowerCase()
-      );
-    }
-
-    if (sort === "new") {
-      posts.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-    } else if (sort === "top") {
-      const now = Date.now();
-      if (time === "day") {
-        posts = posts.filter((p) => now - new Date(p.created_at).getTime() <= 24 * 3600 * 1000);
-      } else if (time === "week") {
-        posts = posts.filter((p) => now - new Date(p.created_at).getTime() <= 7 * 24 * 3600 * 1000);
-      } else if (time === "month") {
-        posts = posts.filter((p) => now - new Date(p.created_at).getTime() <= 30 * 24 * 3600 * 1000);
-      }
-      posts.sort((a, b) => b.score - a.score);
-    } else {
-      // Hot sort
-      posts.sort((a, b) => b.hot_score - a.hot_score);
-    }
-
-    const startIndex = cursor ? parseInt(cursor, 10) : 0;
-    const paginatedPosts = posts.slice(startIndex, startIndex + limit);
-    const nextCursor =
-      startIndex + limit < posts.length ? (startIndex + limit).toString() : null;
-
-    return NextResponse.json({
-      posts: paginatedPosts,
-      nextCursor,
-    });
-  }
+  const offset = cursor && !isNaN(parseInt(cursor, 10)) ? parseInt(cursor, 10) : 0;
 
   try {
     const supabase = await createClient();
+    const admin = createAdminClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    let query = supabase
+    let query = admin
       .from("posts")
       .select(`
         *,
-        author:profiles(*),
         community:communities(*)
       `)
       .eq("is_removed", false);
 
+    // Filter by community or feed type
     if (community) {
-      const { data: commData } = await supabase
+      const { data: commData } = await admin
         .from("communities")
         .select("id")
         .ilike("name", community)
-        .single();
+        .maybeSingle();
 
       if (commData) {
         query = query.eq("community_id", commData.id);
+      } else {
+        return NextResponse.json({ posts: [], nextCursor: null });
       }
+    } else if (feedType === "home" && user) {
+      // Home feed: joined communities
+      const { data: userMemberships } = await admin
+        .from("community_members")
+        .select("community_id")
+        .eq("user_id", user.id);
+
+      if (userMemberships && userMemberships.length > 0) {
+        const commIds = userMemberships.map((m) => m.community_id);
+        query = query.in("community_id", commIds);
+      }
+      // If no memberships, falls through to popular/site-wide
     }
 
-    // Time window for TOP sort
-    if (sort === "top") {
+    // Pinned posts always on top for community feed
+    if (community) {
+      query = query.order("is_pinned", { ascending: false });
+    }
+
+    // Sort order
+    if (feedType === "all" || sort === "new") {
+      query = query.order("created_at", { ascending: false });
+    } else if (sort === "top") {
       const now = new Date();
       if (time === "day") {
         const past = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -94,45 +78,51 @@ export async function GET(request: Request) {
         const past = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
         query = query.gte("created_at", past.toISOString());
       }
-      query = query.order("score", { ascending: false });
-    } else if (sort === "new") {
-      query = query.order("created_at", { ascending: false });
+      query = query.order("score", { ascending: false }).order("created_at", { ascending: false });
     } else {
-      // Default: Hot
-      query = query.order("hot_score", { ascending: false });
+      // Default: Hot rank
+      query = query.order("hot_rank", { ascending: false }).order("created_at", { ascending: false });
     }
 
-    query = query.limit(limit);
-
-    if (cursor) {
-      if (sort === "new") {
-        query = query.lt("created_at", cursor);
-      } else if (sort === "top") {
-        query = query.lt("score", parseInt(cursor, 10));
-      } else {
-        query = query.lt("hot_score", parseFloat(cursor));
-      }
-    }
+    // Range pagination
+    query = query.range(offset, offset + limit - 1);
 
     const { data: posts, error } = await query;
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    // Batch fetch authors
+    const authorIds = Array.from(new Set((posts || []).map((p) => p.author_id).filter(Boolean)));
+    let authorMap: Record<string, unknown> = {};
+    if (authorIds.length > 0) {
+      const { data: authors } = await admin
+        .from("profiles")
+        .select("*")
+        .in("id", authorIds);
+      if (authors) {
+        authorMap = authors.reduce((acc, a) => {
+          acc[a.id] = a;
+          return acc;
+        }, {} as Record<string, unknown>);
+      }
+    }
+
     // Fetch user votes if authenticated
     let userVotesMap: Record<string, VoteType> = {};
     if (user && posts && posts.length > 0) {
       const postIds = posts.map((p) => p.id);
-      const { data: votes } = await supabase
+      const { data: votes } = await admin
         .from("votes")
-        .select("target_id, vote_type")
+        .select("post_id, value")
         .eq("user_id", user.id)
-        .eq("target_type", "post")
-        .in("target_id", postIds);
+        .in("post_id", postIds);
 
       if (votes) {
         userVotesMap = votes.reduce((acc, v) => {
-          acc[v.target_id] = v.vote_type as VoteType;
+          if (v.post_id) {
+            acc[v.post_id] = v.value as VoteType;
+          }
           return acc;
         }, {} as Record<string, VoteType>);
       }
@@ -141,15 +131,13 @@ export async function GET(request: Request) {
     const rawPosts = (posts || []) as unknown as PostWithRelations[];
     const enrichedPosts: PostWithRelations[] = rawPosts.map((p) => ({
       ...p,
+      author: (authorMap[p.author_id] as PostWithRelations["author"]) || null,
       user_vote: userVotesMap[p.id] || null,
     }));
 
     let nextCursor: string | null = null;
     if (enrichedPosts.length === limit) {
-      const last = enrichedPosts[enrichedPosts.length - 1];
-      if (sort === "new") nextCursor = last.created_at;
-      else if (sort === "top") nextCursor = last.score.toString();
-      else nextCursor = last.hot_score.toString();
+      nextCursor = (offset + limit).toString();
     }
 
     return NextResponse.json({

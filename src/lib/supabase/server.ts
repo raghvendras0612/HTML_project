@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { cookies, headers } from "next/headers";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database.types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder-curia.supabase.co";
@@ -16,6 +16,25 @@ export function isSupabaseConfigured(): boolean {
 }
 
 export async function createClient(): Promise<SupabaseClient<Database>> {
+  const reqHeaders = await headers();
+  const authHeader = reqHeaders.get("authorization");
+
+  // Support Bearer token header for API clients, automated tests, and integrations
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
+
+  // Standard @supabase/ssr cookie-based auth for browser sessions and server components
   const cookieStore = await cookies();
 
   return createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
@@ -35,4 +54,14 @@ export async function createClient(): Promise<SupabaseClient<Database>> {
       },
     },
   }) as unknown as SupabaseClient<Database>;
+}
+
+export function createAdminClient(): SupabaseClient<Database> {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey;
+  return createSupabaseClient<Database>(supabaseUrl, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }

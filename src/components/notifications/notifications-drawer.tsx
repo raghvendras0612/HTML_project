@@ -128,21 +128,16 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    {notif.type === "reply_comment" && (
+                    {(notif.type as string) === "comment_reply" && (
                       <MessageSquare className="h-3.5 w-3.5 text-accent-glow" />
                     )}
-                    {notif.type === "reply_post" && (
+                    {(notif.type as string) === "post_reply" && (
                       <MessageSquare className="h-3.5 w-3.5 text-accent" />
                     )}
-                    {notif.type === "moderation" && (
-                      <Shield className="h-3.5 w-3.5 text-danger" />
-                    )}
                     <span className="font-mono text-[11px] font-semibold">
-                      {notif.type === "reply_comment"
+                      {(notif.type as string) === "comment_reply"
                         ? "New reply to your comment"
-                        : notif.type === "reply_post"
-                        ? "New comment on your post"
-                        : "Moderation notice"}
+                        : "New comment on your post"}
                     </span>
                   </div>
                   {!notif.is_read && (

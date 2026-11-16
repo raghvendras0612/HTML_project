@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { FeedList } from "@/components/feed/feed-list";
+import { RecommendedCommunitiesCard } from "@/components/home/recommended-communities-card";
 import { Plus } from "lucide-react";
 import Link from "next/link";
 import { useUser } from "@/hooks/use-user";
@@ -33,6 +34,9 @@ export default function HomePage() {
           </Link>
         </CardContent>
       </Card>
+
+      {/* AI Recommended Communities for users with < 3 joined communities (Requirement 11, 14) */}
+      <RecommendedCommunitiesCard />
 
       {/* Global Feeds with Infinite Scroll & Sorting */}
       <FeedList />

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_MIME_TYPES = [
@@ -12,13 +12,14 @@ const ALLOWED_MIME_TYPES = [
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
+    const admin = createAdminClient();
     const {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized — please log in" }, { status: 401 });
     }
 
     const formData = await request.formData();
@@ -45,8 +46,8 @@ export async function POST(request: Request) {
     const fileExt = file.name.split(".").pop() || "png";
     const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("post-media")
+    const { error: uploadError } = await admin.storage
+      .from("post-images")
       .upload(fileName, file, {
         contentType: file.type,
         upsert: false,
@@ -56,11 +57,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: uploadError.message }, { status: 400 });
     }
 
-    const { data: publicUrlData } = supabase.storage
-      .from("post-media")
+    const { data: publicUrlData } = admin.storage
+      .from("post-images")
       .getPublicUrl(fileName);
 
-    return NextResponse.json({ url: publicUrlData.publicUrl }, { status: 200 });
+    return NextResponse.json(
+      { url: publicUrlData.publicUrl, path: fileName },
+      { status: 200 }
+    );
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Upload failed" },

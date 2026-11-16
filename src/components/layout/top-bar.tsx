@@ -3,10 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, Plus, Bell, Menu } from "lucide-react";
+import { Plus, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/common/logo";
 import { UserMenu } from "@/components/auth/user-menu";
+import { TopBarSearch } from "@/components/search/top-bar-search";
+import { NotificationsDropdown } from "@/components/notifications/notifications-dropdown";
 import { useUser } from "@/hooks/use-user";
 
 interface TopBarProps {
@@ -34,12 +36,6 @@ export function TopBar({
     });
   };
 
-  const handleNotificationsClick = () => {
-    requireAuth(() => {
-      if (onOpenNotifications) onOpenNotifications();
-    });
-  };
-
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border glass-header">
       <div className="flex h-14 items-center justify-between px-3 sm:px-6 max-w-7xl mx-auto gap-2 sm:gap-4">
@@ -58,22 +54,8 @@ export function TopBar({
           <Logo size="md" />
         </div>
 
-        {/* Center: Command Palette / Search Trigger */}
-        <div className="flex-1 max-w-lg mx-2 hidden sm:block">
-          <button
-            type="button"
-            onClick={onOpenCommandPalette}
-            className="w-full flex items-center justify-between rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground hover:border-accent/40 hover:bg-surface-raised transition-all cursor-pointer shadow-sm"
-          >
-            <div className="flex items-center gap-2">
-              <Search className="h-3.5 w-3.5 text-muted-foreground" />
-              <span>Search posts, communities, or commands...</span>
-            </div>
-            <kbd className="hidden lg:inline-flex items-center gap-0.5 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-              <span>⌘</span>K
-            </kbd>
-          </button>
-        </div>
+        {/* Center: Live Debounced Top Bar Search */}
+        <TopBarSearch />
 
         {/* Right: Actions, Notifications & User Menu */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -87,20 +69,8 @@ export function TopBar({
             <span>Create</span>
           </Button>
 
-          {/* Notifications Bell with badge placeholder */}
-          <button
-            onClick={handleNotificationsClick}
-            className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-surface-raised rounded-full transition-colors"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5" />
-            {user && (
-              <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
-              </span>
-            )}
-          </button>
+          {/* Interactive Notifications Bell Dropdown */}
+          <NotificationsDropdown />
 
           {/* User Menu or Log in / Sign up buttons */}
           {mounted ? (
