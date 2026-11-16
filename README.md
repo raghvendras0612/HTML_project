@@ -129,15 +129,19 @@ npm install
 ```
 
 ### 2. Environment Configuration
-Create a `.env.local` file in the root directory:
+Create a `.env.local` file in the root directory (or copy `.env.example`):
 ```env
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 
 # Google Gemini API
 GEMINI_API_KEY=your-google-ai-studio-api-key
 GEMINI_MODEL=gemini-2.5-flash
+
+# Site URL
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
 > **Note**: Curia features zero-config mock fallback mode. If `.env.local` is not configured, Curia automatically runs with interactive in-memory mock discussions (`MOCK_POSTS`, `MOCK_COMMUNITIES`) allowing full UI verification without credentials.
