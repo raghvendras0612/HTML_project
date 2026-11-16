@@ -1,5 +1,6 @@
 -- Curia Migration 00003: Row Level Security (RLS) & Storage Setup
 -- Enables RLS across all tables and configures storage buckets
+-- Fully idempotent: uses DROP POLICY IF EXISTS before CREATE POLICY so re-runs never break
 
 -- =====================================================
 -- 1. ENABLE ROW LEVEL SECURITY ON ALL TABLES
@@ -19,19 +20,19 @@ ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 -- 2. RLS POLICIES: PROFILES
 -- =====================================================
 
--- Public read
+DROP POLICY IF EXISTS "profiles_select_public" ON public.profiles;
 CREATE POLICY "profiles_select_public"
   ON public.profiles FOR SELECT
   USING (true);
 
--- Users update only their own row
+DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
 CREATE POLICY "profiles_update_own"
   ON public.profiles FOR UPDATE
   TO authenticated
   USING (id = auth.uid())
   WITH CHECK (id = auth.uid());
 
--- Insert own profile (also handled by security definer trigger)
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
 CREATE POLICY "profiles_insert_own"
   ON public.profiles FOR INSERT
   TO authenticated
@@ -41,18 +42,18 @@ CREATE POLICY "profiles_insert_own"
 -- 3. RLS POLICIES: COMMUNITIES
 -- =====================================================
 
--- Public read
+DROP POLICY IF EXISTS "communities_select_public" ON public.communities;
 CREATE POLICY "communities_select_public"
   ON public.communities FOR SELECT
   USING (true);
 
--- Authenticated users can insert communities (must be creator)
+DROP POLICY IF EXISTS "communities_insert_auth" ON public.communities;
 CREATE POLICY "communities_insert_auth"
   ON public.communities FOR INSERT
   TO authenticated
   WITH CHECK (creator_id = auth.uid());
 
--- Only community moderators can update community info
+DROP POLICY IF EXISTS "communities_update_mod" ON public.communities;
 CREATE POLICY "communities_update_mod"
   ON public.communities FOR UPDATE
   TO authenticated
@@ -63,24 +64,24 @@ CREATE POLICY "communities_update_mod"
 -- 4. RLS POLICIES: COMMUNITY MEMBERS
 -- =====================================================
 
--- Public read
+DROP POLICY IF EXISTS "community_members_select_public" ON public.community_members;
 CREATE POLICY "community_members_select_public"
   ON public.community_members FOR SELECT
   USING (true);
 
--- Users join as 'member'
+DROP POLICY IF EXISTS "community_members_insert_self" ON public.community_members;
 CREATE POLICY "community_members_insert_self"
   ON public.community_members FOR INSERT
   TO authenticated
   WITH CHECK (user_id = auth.uid() AND role = 'member');
 
--- Users can leave community
+DROP POLICY IF EXISTS "community_members_delete_self" ON public.community_members;
 CREATE POLICY "community_members_delete_self"
   ON public.community_members FOR DELETE
   TO authenticated
   USING (user_id = auth.uid());
 
--- Moderators can update member roles (promote/demote)
+DROP POLICY IF EXISTS "community_members_update_mod" ON public.community_members;
 CREATE POLICY "community_members_update_mod"
   ON public.community_members FOR UPDATE
   TO authenticated
@@ -91,19 +92,19 @@ CREATE POLICY "community_members_update_mod"
 -- 5. RLS POLICIES: COMMUNITY BANS
 -- =====================================================
 
--- Moderators can view bans (and banned user can see their own ban status)
+DROP POLICY IF EXISTS "community_bans_select" ON public.community_bans;
 CREATE POLICY "community_bans_select"
   ON public.community_bans FOR SELECT
   TO authenticated
   USING (public.is_community_moderator(community_id, auth.uid()) OR user_id = auth.uid());
 
--- Moderators can ban members
+DROP POLICY IF EXISTS "community_bans_insert_mod" ON public.community_bans;
 CREATE POLICY "community_bans_insert_mod"
   ON public.community_bans FOR INSERT
   TO authenticated
   WITH CHECK (public.is_community_moderator(community_id, auth.uid()));
 
--- Moderators can unban members
+DROP POLICY IF EXISTS "community_bans_delete_mod" ON public.community_bans;
 CREATE POLICY "community_bans_delete_mod"
   ON public.community_bans FOR DELETE
   TO authenticated
@@ -113,7 +114,7 @@ CREATE POLICY "community_bans_delete_mod"
 -- 6. RLS POLICIES: POSTS
 -- =====================================================
 
--- Public read of non-removed posts; authors and community moderators can read removed posts
+DROP POLICY IF EXISTS "posts_select" ON public.posts;
 CREATE POLICY "posts_select"
   ON public.posts FOR SELECT
   USING (
@@ -122,7 +123,7 @@ CREATE POLICY "posts_select"
     OR public.is_community_moderator(community_id, auth.uid())
   );
 
--- Authenticated, non-banned users insert as themselves
+DROP POLICY IF EXISTS "posts_insert" ON public.posts;
 CREATE POLICY "posts_insert"
   ON public.posts FOR INSERT
   TO authenticated
@@ -135,7 +136,7 @@ CREATE POLICY "posts_insert"
     )
   );
 
--- Authors edit content; authors or community moderators can soft-delete or pin
+DROP POLICY IF EXISTS "posts_update" ON public.posts;
 CREATE POLICY "posts_update"
   ON public.posts FOR UPDATE
   TO authenticated
@@ -148,7 +149,7 @@ CREATE POLICY "posts_update"
     OR public.is_community_moderator(community_id, auth.uid())
   );
 
--- Authors or moderators delete
+DROP POLICY IF EXISTS "posts_delete" ON public.posts;
 CREATE POLICY "posts_delete"
   ON public.posts FOR DELETE
   TO authenticated
@@ -161,7 +162,7 @@ CREATE POLICY "posts_delete"
 -- 7. RLS POLICIES: COMMENTS
 -- =====================================================
 
--- Public read of non-removed comments; authors & community moderators can read removed comments
+DROP POLICY IF EXISTS "comments_select" ON public.comments;
 CREATE POLICY "comments_select"
   ON public.comments FOR SELECT
   USING (
@@ -174,7 +175,7 @@ CREATE POLICY "comments_select"
     )
   );
 
--- Authenticated, non-banned users insert comments as themselves
+DROP POLICY IF EXISTS "comments_insert" ON public.comments;
 CREATE POLICY "comments_insert"
   ON public.comments FOR INSERT
   TO authenticated
@@ -188,7 +189,7 @@ CREATE POLICY "comments_insert"
     )
   );
 
--- Authors edit content; authors or moderators can soft-delete
+DROP POLICY IF EXISTS "comments_update" ON public.comments;
 CREATE POLICY "comments_update"
   ON public.comments FOR UPDATE
   TO authenticated
@@ -209,7 +210,7 @@ CREATE POLICY "comments_update"
     )
   );
 
--- Authors or moderators delete
+DROP POLICY IF EXISTS "comments_delete" ON public.comments;
 CREATE POLICY "comments_delete"
   ON public.comments FOR DELETE
   TO authenticated
@@ -226,23 +227,26 @@ CREATE POLICY "comments_delete"
 -- 8. RLS POLICIES: VOTES
 -- =====================================================
 
--- Users read, insert, update and delete only their own votes
+DROP POLICY IF EXISTS "votes_select_own" ON public.votes;
 CREATE POLICY "votes_select_own"
   ON public.votes FOR SELECT
   TO authenticated
   USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "votes_insert_own" ON public.votes;
 CREATE POLICY "votes_insert_own"
   ON public.votes FOR INSERT
   TO authenticated
   WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "votes_update_own" ON public.votes;
 CREATE POLICY "votes_update_own"
   ON public.votes FOR UPDATE
   TO authenticated
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "votes_delete_own" ON public.votes;
 CREATE POLICY "votes_delete_own"
   ON public.votes FOR DELETE
   TO authenticated
@@ -252,13 +256,13 @@ CREATE POLICY "votes_delete_own"
 -- 9. RLS POLICIES: NOTIFICATIONS
 -- =====================================================
 
--- Users read only their own notifications
+DROP POLICY IF EXISTS "notifications_select_own" ON public.notifications;
 CREATE POLICY "notifications_select_own"
   ON public.notifications FOR SELECT
   TO authenticated
   USING (user_id = auth.uid());
 
--- Users update only their own notifications (mark read)
+DROP POLICY IF EXISTS "notifications_update_own" ON public.notifications;
 CREATE POLICY "notifications_update_own"
   ON public.notifications FOR UPDATE
   TO authenticated
@@ -269,13 +273,13 @@ CREATE POLICY "notifications_update_own"
 -- 10. RLS POLICIES: REPORTS
 -- =====================================================
 
--- Any authenticated user can file a report
+DROP POLICY IF EXISTS "reports_insert" ON public.reports;
 CREATE POLICY "reports_insert"
   ON public.reports FOR INSERT
   TO authenticated
   WITH CHECK (reporter_id = auth.uid());
 
--- Community moderators (and original reporters) can view reports
+DROP POLICY IF EXISTS "reports_select_mod" ON public.reports;
 CREATE POLICY "reports_select_mod"
   ON public.reports FOR SELECT
   TO authenticated
@@ -289,12 +293,11 @@ CREATE POLICY "reports_select_mod"
     OR EXISTS (
       SELECT 1 FROM public.comments c
       JOIN public.posts p ON p.id = c.post_id
-      WHERE c.id = reports.comment_id
-        AND public.is_community_moderator(p.community_id, auth.uid())
+      WHERE c.id = reports.comment_id AND public.is_community_moderator(p.community_id, auth.uid())
     )
   );
 
--- Community moderators can update report status (open -> resolved)
+DROP POLICY IF EXISTS "reports_update_mod" ON public.reports;
 CREATE POLICY "reports_update_mod"
   ON public.reports FOR UPDATE
   TO authenticated
@@ -307,8 +310,7 @@ CREATE POLICY "reports_update_mod"
     OR EXISTS (
       SELECT 1 FROM public.comments c
       JOIN public.posts p ON p.id = c.post_id
-      WHERE c.id = reports.comment_id
-        AND public.is_community_moderator(p.community_id, auth.uid())
+      WHERE c.id = reports.comment_id AND public.is_community_moderator(p.community_id, auth.uid())
     )
   );
 
@@ -326,16 +328,17 @@ ON CONFLICT (id) DO UPDATE SET
   file_size_limit = EXCLUDED.file_size_limit,
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
--- Public read for images
+DROP POLICY IF EXISTS "storage_public_read_post_images" ON storage.objects;
 CREATE POLICY "storage_public_read_post_images"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'post-images');
 
+DROP POLICY IF EXISTS "storage_public_read_avatars" ON storage.objects;
 CREATE POLICY "storage_public_read_avatars"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'avatars');
 
--- Authenticated users upload only into a folder named with their own user id: <uid>/<filename>
+DROP POLICY IF EXISTS "storage_authenticated_upload_post_images" ON storage.objects;
 CREATE POLICY "storage_authenticated_upload_post_images"
   ON storage.objects FOR INSERT
   TO authenticated
@@ -344,6 +347,7 @@ CREATE POLICY "storage_authenticated_upload_post_images"
     AND auth.uid()::text = (storage.foldername(name))[1]
   );
 
+DROP POLICY IF EXISTS "storage_authenticated_upload_avatars" ON storage.objects;
 CREATE POLICY "storage_authenticated_upload_avatars"
   ON storage.objects FOR INSERT
   TO authenticated
@@ -352,7 +356,7 @@ CREATE POLICY "storage_authenticated_upload_avatars"
     AND auth.uid()::text = (storage.foldername(name))[1]
   );
 
--- Users can delete only their own uploaded files
+DROP POLICY IF EXISTS "storage_owner_delete_post_images" ON storage.objects;
 CREATE POLICY "storage_owner_delete_post_images"
   ON storage.objects FOR DELETE
   TO authenticated
@@ -361,6 +365,7 @@ CREATE POLICY "storage_owner_delete_post_images"
     AND auth.uid()::text = (storage.foldername(name))[1]
   );
 
+DROP POLICY IF EXISTS "storage_owner_delete_avatars" ON storage.objects;
 CREATE POLICY "storage_owner_delete_avatars"
   ON storage.objects FOR DELETE
   TO authenticated
