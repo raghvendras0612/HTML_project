@@ -24,7 +24,7 @@ interface AuthContextType {
     password: string,
     username?: string
   ) => Promise<{ error?: string; confirmationRequired?: boolean }>;
-  signInWithGoogle: () => Promise<{ error?: string }>;
+  signInWithGoogle: (nextUrl?: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   updateUserKarma: (delta: number) => void;
 }
@@ -213,24 +213,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (nextUrl?: string) => {
     if (!isConfigured) {
-      return { error: "Supabase credentials not configured." };
+      const msg = "Supabase credentials not configured.";
+      console.error("[Auth] Google OAuth aborted:", msg);
+      return { error: msg };
     }
 
     try {
       const supabase = createClient();
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const safeNext = nextUrl && nextUrl.startsWith("/") && !nextUrl.startsWith("//") ? nextUrl : undefined;
+      const callbackUrl = safeNext
+        ? `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
+        : `${origin}/auth/callback`;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: callbackUrl,
         },
       });
 
-      if (error) return { error: error.message };
+      if (error) {
+        console.error("[Auth] Google signInWithOAuth returned error:", error.message, error);
+        return { error: error.message };
+      }
       return {};
     } catch (err) {
-      return { error: err instanceof Error ? err.message : "OAuth error" };
+      const msg = err instanceof Error ? err.message : "OAuth error";
+      console.error("[Auth] Google signInWithOAuth caught exception:", msg, err);
+      return { error: msg };
     }
   };
 

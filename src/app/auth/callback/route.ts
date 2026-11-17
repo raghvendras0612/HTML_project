@@ -2,9 +2,21 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url);
+  const requestUrl = request.nextUrl;
   const code = requestUrl.searchParams.get("code");
-  const next = requestUrl.searchParams.get("next") || "/";
+  const rawNext = requestUrl.searchParams.get("next") || "/";
+
+  // Prevent open redirect vulnerabilities by strictly ensuring relative paths
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+
+  // Check for upstream OAuth provider errors (e.g. user denied consent, configuration error)
+  const oauthError = requestUrl.searchParams.get("error_description") || requestUrl.searchParams.get("error");
+  if (oauthError) {
+    console.error("[Supabase Auth Callback] OAuth provider error:", oauthError);
+    return NextResponse.redirect(
+      new URL(`/login?error=${encodeURIComponent(oauthError)}`, requestUrl.origin)
+    );
+  }
 
   if (code) {
     const supabase = await createClient();
@@ -12,11 +24,15 @@ export async function GET(request: NextRequest) {
     if (!error) {
       return NextResponse.redirect(new URL(next, requestUrl.origin));
     }
-    console.error("Auth callback exchange error:", error);
+    console.error("[Supabase Auth Callback] Exchange code for session error:", error.message, error);
+    return NextResponse.redirect(
+      new URL(`/login?error=${encodeURIComponent(error.message)}`, requestUrl.origin)
+    );
   }
 
-  // If error occurs or code is missing, redirect to login with query param
+  // If code is missing and no explicit error was provided
+  console.warn("[Supabase Auth Callback] Missing authorization code in query parameters.");
   return NextResponse.redirect(
-    new URL(`/login?error=${encodeURIComponent("Could not authenticate with provider")}`, requestUrl.origin)
+    new URL(`/login?error=${encodeURIComponent("Authentication code missing from provider callback")}`, requestUrl.origin)
   );
 }

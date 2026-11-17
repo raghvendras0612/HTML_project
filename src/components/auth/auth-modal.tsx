@@ -101,6 +101,7 @@ export function AuthModal() {
     const result = await signInWithGoogle();
     setIsSubmitting(false);
     if (result.error) {
+      console.error("[AuthModal] Google sign-in failed:", result.error);
       setErrorMsg(result.error);
     }
   };

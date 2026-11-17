@@ -24,9 +24,17 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
+  const authError = searchParams.get("error");
   const { signInWithEmail, signInWithGoogle } = useUser();
   const [submitting, setSubmitting] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (authError) {
+      console.error("[Login Page] Authentication error received:", authError);
+      toast.error(authError);
+    }
+  }, [authError]);
 
   const {
     register,
@@ -57,9 +65,10 @@ function LoginForm() {
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
-    const { error } = await signInWithGoogle();
+    const { error } = await signInWithGoogle(nextUrl);
     setGoogleLoading(false);
     if (error) {
+      console.error("[Login Page] Google sign-in failed:", error);
       toast.error(error);
     }
   };
@@ -74,6 +83,12 @@ function LoginForm() {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {authError && (
+          <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger flex items-start gap-2">
+            <span>{authError}</span>
+          </div>
+        )}
+
         {/* Google OAuth Button */}
         <Button
           type="button"
