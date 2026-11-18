@@ -2,11 +2,55 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import {
+  users,
+  communities,
+  posts,
+  threads,
+  fillerPools,
+  parseOffsetToMinutes,
+  DemoUser,
+  DemoCommunity,
+  DemoPost,
+  ThreadCommentNode,
+} from "./seed-data";
 
-// Read .env.local manually for service role key
+// ============================================================================
+// Deterministic Seeded Pseudo-Random Number Generator (Mulberry32)
+// ============================================================================
+function createPRNG(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function stringToSeed(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
+}
+
+function shuffleWithRng<T>(array: T[], rng: () => number): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// ============================================================================
+// Environment & Safety Pre-flight Checks
+// ============================================================================
 const envPath = path.resolve(process.cwd(), ".env.local");
 if (!fs.existsSync(envPath)) {
-  console.error("❌ .env.local not found in current directory");
+  console.error("❌ Error: .env.local not found in project root.");
   process.exit(1);
 }
 
@@ -17,861 +61,885 @@ for (const line of envContent.split("\n")) {
   if (!trimmed || trimmed.startsWith("#")) continue;
   const idx = trimmed.indexOf("=");
   if (idx !== -1) {
-    env[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+    env[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim().replace(/^['\"]|['\"]$/g, "");
   }
 }
 
-const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL;
-const SERVICE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SERVICE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error("❌ Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local");
+  console.error("❌ Error: Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local");
   process.exit(1);
 }
 
-const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
+console.log(`\n🌐 Connected Project URL: ${SUPABASE_URL}`);
+
+const isDryRun = process.argv.includes("--dry-run");
+const isReset = process.argv.includes("--reset");
+
+if (!isDryRun && process.env.CONFIRM_SEED !== "yes") {
+  console.error("\n❌ REFUSAL TO EXECUTE:");
+  console.error("   To protect production data, this script requires the environment variable CONFIRM_SEED=yes.");
+  console.error("   Example: CONFIRM_SEED=yes npm run seed");
+  console.error("   Example: CONFIRM_SEED=yes npm run seed:reset\n");
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// Demo Users Configuration (12 Users)
-const DEMO_USERS = [
-  {
-    email: "demo1@curia.test",
-    username: "alex_dev",
-    display_name: "Alex Rivera",
-    avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-    bio: "Full-stack engineer building high-performance web applications with React, Next.js, and Postgres.",
-  },
-  {
-    email: "demo2@curia.test",
-    username: "elena_ai",
-    display_name: "Dr. Elena Rostova",
-    avatar_url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80",
-    bio: "AI research scientist specializing in multimodal models, prompt defense, and LLM alignment.",
-  },
-  {
-    email: "demo3@curia.test",
-    username: "marcus_ux",
-    display_name: "Marcus Chen",
-    avatar_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-    bio: "Design systems obsessive. Focused on micro-interactions, WCAG AA compliance, and dark-first tokens.",
-  },
-  {
-    email: "demo4@curia.test",
-    username: "sarah_sys",
-    display_name: "Sarah Kim",
-    avatar_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-    bio: "Distributed systems architect. Rust & Go enthusiast obsessed with low-latency streaming.",
-  },
-  {
-    email: "demo5@curia.test",
-    username: "chen_code",
-    display_name: "Wei Chen",
-    avatar_url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
-    bio: "Senior backend developer writing high-throughput database engines and exploring zero-knowledge proofs.",
-  },
-  {
-    email: "demo6@curia.test",
-    username: "olivia_data",
-    display_name: "Olivia Patel",
-    avatar_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80",
-    bio: "Data platform engineer. Transforming petabytes into real-time business insights with DuckDB and ClickHouse.",
-  },
-  {
-    email: "demo7@curia.test",
-    username: "david_ops",
-    display_name: "David Miller",
-    avatar_url: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80",
-    bio: "Site reliability and cloud infra specialist. Automating Kubernetes clusters and eliminating downtime.",
-  },
-  {
-    email: "demo8@curia.test",
-    username: "maya_sec",
-    display_name: "Maya Lin",
-    avatar_url: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
-    bio: "Application security engineer and red team researcher. Hardening APIs and breaking cryptographic protocols.",
-  },
-  {
-    email: "demo9@curia.test",
-    username: "sam_frontend",
-    display_name: "Sam Becker",
-    avatar_url: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80",
-    bio: "Frontend engineer and CSS wizard. Creating beautiful, fluid user interfaces and smooth 60fps animations.",
-  },
-  {
-    email: "demo10@curia.test",
-    username: "nina_ml",
-    display_name: "Nina Johansson",
-    avatar_url: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
-    bio: "Machine learning engineer deploying edge inference models and optimizing neural network quantization.",
-  },
-  {
-    email: "demo11@curia.test",
-    username: "lucas_rust",
-    display_name: "Lucas Rossi",
-    avatar_url: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80",
-    bio: "Systems programmer building embedded microcontrollers, memory-safe OS kernels, and audio DSP engines in Rust.",
-  },
-  {
-    email: "demo12@curia.test",
-    username: "priya_cloud",
-    display_name: "Priya Sharma",
-    avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-    bio: "Cloud native developer advocate and serverless enthusiast building event-driven microservices.",
-  },
-];
+// Credentials file path
+const CREDENTIALS_FILE = path.resolve(process.cwd(), ".seed-credentials.local");
 
-// 8 Communities with distinct themes and 3 rules each
-const DEMO_COMMUNITIES = [
-  {
-    name: "webdev",
-    title: "Web Development",
-    description: "Modern frontend, backend, SSR frameworks, edge runtimes, browser standards, and web architecture.",
-    rules: [
-      { title: "Constructive Code Reviews", body: "Focus technical critique on design patterns and architecture rather than author personality." },
-      { title: "No Low-Effort Memes", body: "Discussions should center on real-world engineering experiences, benchmarks, and solutions." },
-      { title: "Format Code Snippets", body: "Always use code blocks with proper syntax highlighting to ensure readability." },
-    ],
-  },
-  {
-    name: "ai_tools",
-    title: "AI Tools & LLM Engineering",
-    description: "Building production systems with language models, prompt engineering, agentic workflows, and local open-weights inference.",
-    rules: [
-      { title: "Cite Benchmarks and Models", body: "Specify exact model names, quantizations, and evaluation methodologies when sharing results." },
-      { title: "No Pure Marketing Hype", body: "Commercial product pitches without technical architectures will be removed." },
-      { title: "Responsible Disclosure", body: "Prompt injection vulnerabilities in active commercial products must be reported safely." },
-    ],
-  },
-  {
-    name: "startups",
-    title: "Tech Startups & Indie Hacking",
-    description: "Bootstrapping, venture capital, early PMF, SaaS metrics, technical co-founding, and scaling modern companies.",
-    rules: [
-      { title: "Transparent Metrics", body: "Share authentic numbers, challenges, and post-mortems rather than vanity revenue screenshots." },
-      { title: "Actionable Advice", body: "Offer actionable playbooks backed by actual founder experience." },
-      { title: "Respect Confidentiality", body: "Do not disclose private investor communications or confidential metrics without consent." },
-    ],
-  },
-  {
-    name: "design",
-    title: "Design Systems & UI Engineering",
-    description: "Tokens, typography, micro-interactions, layout grids, accessibility standards, and component libraries.",
-    rules: [
-      { title: "WCAG Accessibility First", body: "Color contrast and accessible tap targets must always be considered in critiques." },
-      { title: "Include Context", body: "When sharing UI screenshots, explain the user journey and constraints." },
-      { title: "Attribute Inspiration", body: "Credit design system inspirations, open-source libraries, and designers." },
-    ],
-  },
-  {
-    name: "gaming",
-    title: "Game Development & Engine Tech",
-    description: "Shaders, physics engines, game design, Unreal Engine, Unity, Godot, and low-level graphics programming.",
-    rules: [
-      { title: "Specify Engine & Platform", body: "Always include engine version and target platforms in debugging threads." },
-      { title: "Respect Spoilers", body: "Use markdown spoiler tags when analyzing commercial story-driven mechanics." },
-      { title: "No Piracy or Cracks", body: "Discussions must center exclusively on development and technical implementation." },
-    ],
-  },
-  {
-    name: "books",
-    title: "Technical Books & Publications",
-    description: "Deep readings in software engineering, computer science classics, distributed algorithms, and system design.",
-    rules: [
-      { title: "In-Depth Summaries", body: "Provide chapter highlights and personal takeaways rather than brief ratings." },
-      { title: "Encourage Diverse Perspectives", body: "Critique theories and methodologies with intellectual honesty." },
-      { title: "Legal Sources Only", body: "Link only to official publishers, author websites, and legal open-access publications." },
-    ],
-  },
-  {
-    name: "fitness",
-    title: "Developer Fitness & Ergonomics",
-    description: "Ergonomic desk setups, physical training, mental wellness, RSI prevention, and sustained developer health.",
-    rules: [
-      { title: "No Medical Advice", body: "Share personal fitness routines, but consult certified physical therapists for injuries." },
-      { title: "Scientific Backing", body: "Cite peer-reviewed ergonomics and physiology principles where relevant." },
-      { title: "Supportive Culture", body: "Encourage beginners with positive reinforcement and practical advice." },
-    ],
-  },
-  {
-    name: "askcuria",
-    title: "Ask Curia: Engineering Q&A",
-    description: "A forum for technical inquiries, career architectural guidance, post-mortems, and engineering discussions.",
-    rules: [
-      { title: "Detailed Questions", body: "Provide reproducible examples, error logs, and attempted solutions in all requests." },
-      { title: "Civil Discourse", body: "Treat all inquiries with respect regardless of engineer seniority." },
-      { title: "Mark Solutions", body: "Update question threads with what ultimately fixed your problem." },
-    ],
-  },
-];
-
-// Helper to generate a random password
-function generateSecurePassword(): string {
-  return "CuriaDemo!" + crypto.randomBytes(6).toString("hex");
+// ============================================================================
+// Helper: Check if seed_key column exists on posts/comments
+// ============================================================================
+let hasSeedKey = false;
+async function checkSeedKeyColumn(): Promise<boolean> {
+  const { error } = await supabase.from("posts").select("seed_key").limit(1);
+  return !error;
 }
 
-// --------------------------------------------------------------------------
-// RESET DEMO DATA
-// --------------------------------------------------------------------------
-async function resetDemoData() {
-  console.log("🧹 Resetting Curia demo data...");
+// ============================================================================
+// RESET PROCEDURE (--reset)
+// ============================================================================
+async function runReset() {
+  console.log("\n=================================================================");
+  console.log("🧹 RUNNING RESET: Removing only demo data...");
+  console.log("=================================================================");
 
-  // 1. Fetch existing demo users by email prefix or domain
-  const { data: usersData, error: listErr } = await admin.auth.admin.listUsers({ perPage: 100 });
-  if (listErr) {
-    console.error("Error listing users:", listErr);
+  if (isDryRun) {
+    console.log("[DRY RUN] Would remove seeded votes, notifications, comments, posts, communities, and users.");
     return;
   }
 
-  const demoUsers = usersData.users.filter(
-    (u) => u.email?.endsWith("@curia.test") && u.email.startsWith("demo")
-  );
+  hasSeedKey = await checkSeedKeyColumn();
+
+  // 1. Fetch demo user ids
+  const { data: authData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  const demoEmails = new Set(users.map((u) => u.email));
+  const demoUsers = (authData?.users || []).filter((u) => u.email && demoEmails.has(u.email));
   const demoUserIds = demoUsers.map((u) => u.id);
 
-  console.log(`Found ${demoUserIds.length} demo users to clean up.`);
+  // 2. Fetch demo community ids
+  const demoCommNames = communities.map((c) => c.name);
+  const { data: comms } = await supabase
+    .from("communities")
+    .select("id, name")
+    .in("name", demoCommNames);
+  const commIds = (comms || []).map((c) => c.id);
 
-  if (demoUserIds.length > 0) {
-    // 2. Delete votes by demo users
-    await admin.from("votes").delete().in("user_id", demoUserIds);
-
-    // 3. Delete comments by demo users
-    await admin.from("comments").delete().in("author_id", demoUserIds);
-
-    // 4. Delete posts by demo users
-    await admin.from("posts").delete().in("author_id", demoUserIds);
-
-    // 5. Delete memberships and bans
-    await admin.from("community_members").delete().in("user_id", demoUserIds);
-    await admin.from("community_bans").delete().in("user_id", demoUserIds);
-    await admin.from("reports").delete().in("reporter_id", demoUserIds);
-    await admin.from("notifications").delete().in("user_id", demoUserIds);
-
-    // 6. Delete profiles
-    await admin.from("profiles").delete().in("id", demoUserIds);
-
-    // 7. Delete auth users
-    for (const u of demoUsers) {
-      await admin.auth.admin.deleteUser(u.id);
+  // 3. Delete comments
+  let deletedCommentsCount = 0;
+  if (hasSeedKey) {
+    const { data: deletedComments } = await supabase
+      .from("comments")
+      .delete()
+      .not("seed_key", "is", null)
+      .select("id");
+    deletedCommentsCount = deletedComments?.length || 0;
+  } else if (commIds.length > 0) {
+    const { data: demoPosts } = await supabase.from("posts").select("id").in("community_id", commIds);
+    const postIds = (demoPosts || []).map((p) => p.id);
+    if (postIds.length > 0) {
+      const { data: deletedComments } = await supabase
+        .from("comments")
+        .delete()
+        .in("post_id", postIds)
+        .select("id");
+      deletedCommentsCount = deletedComments?.length || 0;
     }
   }
 
-  // 8. Delete demo communities (only if creator was demo user or match names)
-  const demoCommNames = DEMO_COMMUNITIES.map((c) => c.name).filter((n) => n !== "testlab");
-  await admin.from("communities").delete().in("name", demoCommNames);
+  // 4. Delete posts
+  let deletedPostsCount = 0;
+  if (hasSeedKey) {
+    const { data: deletedPosts } = await supabase
+      .from("posts")
+      .delete()
+      .not("seed_key", "is", null)
+      .select("id");
+    deletedPostsCount = deletedPosts?.length || 0;
+  } else if (commIds.length > 0) {
+    const { data: deletedPosts } = await supabase
+      .from("posts")
+      .delete()
+      .in("community_id", commIds)
+      .select("id");
+    deletedPostsCount = deletedPosts?.length || 0;
+  }
 
-  console.log("✅ Demo data reset completed cleanly.\n");
+  // 5. Delete demo communities
+  let deletedCommsCount = 0;
+  if (demoCommNames.length > 0) {
+    const { data: deletedComms } = await supabase
+      .from("communities")
+      .delete()
+      .in("name", demoCommNames)
+      .select("id");
+    deletedCommsCount = deletedComms?.length || 0;
+  }
+
+  // 6. Delete demo users from auth
+  let deletedUsersCount = 0;
+  for (const user of demoUsers) {
+    const { error } = await supabase.auth.admin.deleteUser(user.id);
+    if (!error) deletedUsersCount++;
+  }
+
+  // 7. Remove credentials file if exists
+  if (fs.existsSync(CREDENTIALS_FILE)) {
+    fs.unlinkSync(CREDENTIALS_FILE);
+  }
+
+  console.log(`\n✔ Reset Completed:`);
+  console.log(`   - Comments deleted:    ${deletedCommentsCount}`);
+  console.log(`   - Posts deleted:       ${deletedPostsCount}`);
+  console.log(`   - Communities deleted: ${deletedCommsCount}`);
+  console.log(`   - Demo users deleted:  ${deletedUsersCount}`);
+  console.log("=================================================================\n");
 }
 
-// --------------------------------------------------------------------------
-// SEED ENGINE
-// --------------------------------------------------------------------------
-async function seedDemoData() {
-  console.log("🌱 Starting Curia Idempotent Seeding...");
+// ============================================================================
+// MAIN SEED PROCEDURE
+// ============================================================================
+async function runSeed() {
+  console.log("\n=================================================================");
+  console.log(`🌱 STARTING CURIA SEED${isDryRun ? " (DRY RUN)" : ""}`);
+  console.log("=================================================================");
 
-  const demoPassword = generateSecurePassword();
-  console.log(`🔑 Demo Accounts Password: ${demoPassword} (printed once for convenience)\n`);
+  hasSeedKey = await checkSeedKeyColumn();
+  if (!hasSeedKey) {
+    console.warn("⚠️ Notice: seed_key column not detected in database.");
+    console.warn("   Falling back to unique post titles / comment identifiers for idempotency.");
+    console.warn("   To enable full schema support, run supabase/migrations/00005_seed_support.sql in Supabase SQL Editor.");
+  } else {
+    console.log("✔ Schema support: 'seed_key' column active for posts and comments.");
+  }
 
-  // 1. Provision 12 Demo Users
-  const userMap = new Map<string, { id: string; username: string }>();
+  // --------------------------------------------------------------------------
+  // STEP 1: DEMO USERS
+  // --------------------------------------------------------------------------
+  console.log("\n--- [Step 1/6] Demo Users (12 Users) ---");
+  const { data: authList, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  if (listErr) {
+    console.error("❌ Failed to list users from Supabase admin API:", listErr.message);
+    process.exit(1);
+  }
 
-  for (const cfg of DEMO_USERS) {
-    // Check if user already exists
-    const { data: existingProfiles } = await admin
-      .from("profiles")
-      .select("id, username")
-      .eq("username", cfg.username)
-      .maybeSingle();
+  const existingAuthMap = new Map<string, any>();
+  for (const u of authList?.users || []) {
+    if (u.email) existingAuthMap.set(u.email.toLowerCase(), u);
+  }
 
-    if (existingProfiles) {
-      userMap.set(cfg.username, existingProfiles);
-      console.log(`👤 User @${cfg.username} already exists (ID: ${existingProfiles.id})`);
-    } else {
-      // Create via Auth Admin API
-      const { data: authUser, error: authErr } = await admin.auth.admin.createUser({
-        email: cfg.email,
-        password: demoPassword,
-        email_confirm: true,
-        user_metadata: {
-          username: cfg.username,
-          display_name: cfg.display_name,
-        },
-      });
+  const userMap = new Map<string, string>(); // username -> userId
+  let usersCreated = 0;
+  let usersSkipped = 0;
+  const newCredentials: Array<{ email: string; username: string; pass: string }> = [];
 
-      if (authErr || !authUser.user) {
-        console.error(`Failed to create auth user ${cfg.email}:`, authErr?.message);
-        continue;
+  for (const demoUser of users) {
+    const existing = existingAuthMap.get(demoUser.email.toLowerCase());
+
+    if (existing) {
+      userMap.set(demoUser.username, existing.id);
+      usersSkipped++;
+
+      if (!isDryRun) {
+        // Ensure profile row matches exact metadata
+        await supabase
+          .from("profiles")
+          .update({
+            username: demoUser.username,
+            display_name: demoUser.displayName,
+            bio: demoUser.bio,
+          })
+          .eq("id", existing.id);
       }
+    } else {
+      const generatedPass = crypto.randomBytes(12).toString("base64url").slice(0, 16);
+      newCredentials.push({ email: demoUser.email, username: demoUser.username, pass: generatedPass });
 
-      const uid = authUser.user.id;
+      if (isDryRun) {
+        userMap.set(demoUser.username, `dry-run-user-${demoUser.username}`);
+        usersCreated++;
+      } else {
+        const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
+          email: demoUser.email,
+          password: generatedPass,
+          email_confirm: true,
+          user_metadata: {
+            user_name: demoUser.username,
+            name: demoUser.displayName,
+          },
+        });
 
-      // Upsert profile
-      await admin.from("profiles").upsert({
-        id: uid,
-        username: cfg.username,
-        display_name: cfg.display_name,
-        avatar_url: cfg.avatar_url,
-        bio: cfg.bio,
-        karma: 150 + Math.floor(Math.random() * 850),
-      });
+        if (createErr || !newUser?.user) {
+          console.error(`❌ Failed to create user ${demoUser.email}:`, createErr?.message);
+          process.exit(1);
+        }
 
-      userMap.set(cfg.username, { id: uid, username: cfg.username });
-      console.log(`✨ Created user @${cfg.username} (${cfg.email})`);
+        userMap.set(demoUser.username, newUser.user.id);
+        usersCreated++;
+
+        // Update profile with exact display name and bio
+        await supabase
+          .from("profiles")
+          .update({
+            username: demoUser.username,
+            display_name: demoUser.displayName,
+            bio: demoUser.bio,
+          })
+          .eq("id", newUser.user.id);
+      }
     }
   }
 
-  const userList = Array.from(userMap.values());
-  if (userList.length === 0) {
-    throw new Error("No users available for seeding.");
+  // Save new credentials safely once
+  if (newCredentials.length > 0 && !isDryRun) {
+    let credContent = fs.existsSync(CREDENTIALS_FILE) ? fs.readFileSync(CREDENTIALS_FILE, "utf-8") : "";
+    if (!credContent) {
+      credContent = "# Curia Demo Credentials (gitignored - DO NOT COMMIT)\n# Format: email | username | password\n";
+    }
+    for (const c of newCredentials) {
+      credContent += `${c.email} | ${c.username} | ${c.pass}\n`;
+    }
+    fs.writeFileSync(CREDENTIALS_FILE, credContent, { mode: 0o600 });
+    console.log(`🔒 Wrote ${newCredentials.length} generated credentials to .seed-credentials.local (permissions 0600).`);
   }
 
-  // 2. Provision 8 Communities
-  const commMap = new Map<string, { id: string; name: string }>();
+  console.log(`   Result: ${usersCreated} created, ${usersSkipped} skipped (already present)`);
 
-  for (let i = 0; i < DEMO_COMMUNITIES.length; i++) {
-    const commCfg = DEMO_COMMUNITIES[i];
-    const creator = userList[i % userList.length];
+  // --------------------------------------------------------------------------
+  // STEP 2: COMMUNITIES & MEMBERSHIPS
+  // --------------------------------------------------------------------------
+  console.log("\n--- [Step 2/6] Communities & Memberships (8 Communities) ---");
+  const { data: existingCommsData } = await supabase
+    .from("communities")
+    .select("id, name");
+  const commMap = new Map<string, string>();
+  for (const c of existingCommsData || []) {
+    commMap.set(c.name, c.id);
+  }
 
-    const { data: existingComm } = await admin
-      .from("communities")
-      .select("id, name")
-      .eq("name", commCfg.name)
-      .maybeSingle();
+  let commsCreated = 0;
+  let commsSkipped = 0;
+  let membersAdded = 0;
+  let membersSkipped = 0;
 
-    if (existingComm) {
-      commMap.set(commCfg.name, existingComm);
-      console.log(`🏰 Community c/${commCfg.name} already exists (ID: ${existingComm.id})`);
+  for (const comm of communities) {
+    let commId = commMap.get(comm.name);
+    const creatorId = userMap.get(comm.creator);
+
+    if (commId) {
+      commsSkipped++;
     } else {
-      const { data: newComm, error: commErr } = await admin
-        .from("communities")
-        .insert({
-          name: commCfg.name,
-          title: commCfg.title,
-          description: commCfg.description,
-          rules: commCfg.rules,
-          creator_id: creator.id,
-          member_count: 50 + Math.floor(Math.random() * 450),
-        })
-        .select("id, name")
-        .single();
+      if (isDryRun) {
+        commId = `dry-run-comm-${comm.name}`;
+        commMap.set(comm.name, commId);
+        commsCreated++;
+      } else {
+        const { data: newComm, error: commErr } = await supabase
+          .from("communities")
+          .insert({
+            name: comm.name,
+            title: comm.title,
+            description: comm.description,
+            rules: comm.rules,
+            creator_id: creatorId,
+          })
+          .select("id")
+          .single();
 
-      if (commErr || !newComm) {
-        console.error(`Failed to create community ${commCfg.name}:`, commErr?.message);
-        continue;
+        if (commErr || !newComm) {
+          console.error(`❌ Failed to create community c/${comm.name}:`, commErr?.message);
+          process.exit(1);
+        }
+
+        commId = newComm.id;
+        commMap.set(comm.name, commId);
+        commsCreated++;
+      }
+    }
+
+    if (!isDryRun && commId) {
+      // Check existing members
+      const { data: existingMembers } = await supabase
+        .from("community_members")
+        .select("user_id, role")
+        .eq("community_id", commId);
+      const existingMemberMap = new Map(existingMembers?.map((m) => [m.user_id, m.role]));
+
+      // 1. Moderators
+      for (const modUsername of comm.moderators) {
+        const modId = userMap.get(modUsername);
+        if (!modId) continue;
+        if (!existingMemberMap.has(modId)) {
+          await supabase.from("community_members").insert({
+            community_id: commId,
+            user_id: modId,
+            role: "moderator",
+          });
+          membersAdded++;
+        } else if (existingMemberMap.get(modId) !== "moderator") {
+          await supabase
+            .from("community_members")
+            .update({ role: "moderator" })
+            .eq("community_id", commId)
+            .eq("user_id", modId);
+        } else {
+          membersSkipped++;
+        }
       }
 
-      commMap.set(commCfg.name, newComm);
-      console.log(`✨ Created community c/${commCfg.name} (creator: @${creator.username})`);
-
-      // Assign creator as moderator
-      await admin.from("community_members").upsert(
-        {
-          community_id: newComm.id,
-          user_id: creator.id,
-          role: "moderator",
-        },
-        { onConflict: "community_id,user_id" }
-      );
-
-      // Add random demo users as members
-      for (const u of userList) {
-        if (u.id !== creator.id && Math.random() > 0.3) {
-          await admin.from("community_members").upsert(
-            {
-              community_id: newComm.id,
-              user_id: u.id,
-              role: "member",
-            },
-            { onConflict: "community_id,user_id" }
-          );
+      // 2. Regular Members
+      for (const memberUsername of comm.members) {
+        if (memberUsername === comm.creator || comm.moderators.includes(memberUsername)) {
+          continue; // Creator is handled by trigger, moderators already handled
+        }
+        const memberId = userMap.get(memberUsername);
+        if (!memberId) continue;
+        if (!existingMemberMap.has(memberId)) {
+          await supabase.from("community_members").insert({
+            community_id: commId,
+            user_id: memberId,
+            role: "member",
+          });
+          membersAdded++;
+        } else {
+          membersSkipped++;
         }
       }
     }
   }
 
-  // 3. Provision 40 Realistic Posts
-  console.log("\n📝 Seeding 40 realistic posts across communities...");
+  console.log(`   Communities: ${commsCreated} created, ${commsSkipped} skipped (already present)`);
+  console.log(`   Memberships: ${membersAdded} added, ${membersSkipped} skipped`);
 
-  const POST_TEMPLATES = [
-    // c/webdev
-    {
-      comm: "webdev",
-      type: "text",
-      title: "Why React Server Components (RSC) completely transformed our multi-tenant SaaS architecture",
-      body: `Over the past six months, our engineering team migrated our core customer dashboard to Next.js App Router and React Server Components.
-Here are the primary architectural lessons learned:
-1. **Zero Client Bundle for Data Layer**: We eliminated over 140KB of frontend client libraries by executing data formatting on the server.
-2. **Streaming & Suspense**: Loading boundaries prevent blocking page transitions. Skeletons pop instantly, and heavyweight analytical grids stream in progressively.
-3. **Optimistic Updates**: Using TanStack Query for interactive mutation leaves user feedback feeling instantaneous.
+  // --------------------------------------------------------------------------
+  // STEP 3: POSTS (24 Posts - P24 first, then oldest to newest)
+  // --------------------------------------------------------------------------
+  console.log("\n--- [Step 3/6] Posts (24 Posts) ---");
 
-What has been your experience transitioning production workloads to Server Components?`,
-    },
-    {
-      comm: "webdev",
-      type: "link",
-      title: "V8 JavaScript Engine: High-performance memory management and generational garbage collection",
-      url: "https://v8.dev/blog/concurrent-marking",
-      body: "Comprehensive architectural breakdown from the V8 team on concurrent marking and write barrier optimizations.",
-    },
-    {
-      comm: "webdev",
-      type: "image",
-      title: "Clean Design System Token Hierarchy & CSS Variables Structure",
-      image_path: "https://picsum.photos/seed/webdev1/1200/630",
-      body: "Our finalized design tokens schema showing semantic surface, border, and glow layers.",
-    },
-    {
-      comm: "webdev",
-      type: "text",
-      title: "Benchmarking PostgreSQL Row Level Security (RLS) throughput under 10,000 concurrent sessions",
-      body: `We put PostgreSQL Row Level Security (RLS) under sustained load using k6.
-Key takeaways:
-- Using \`(select auth.uid()) = user_id\` instead of \`auth.uid() = user_id\` allows Postgres to optimize the query plan as a stable subquery.
-- Covering indexes on \`(user_id, created_at desc)\` reduced 99th percentile query latency from 85ms to 2.4ms.
-- Connection pooling with PgBouncer is mandatory when scaling past 2,000 active WebSocket connections.`,
-    },
-    {
-      comm: "webdev",
-      type: "text",
-      title: "TypeScript 5.5 Inferred Type Predicates: No more manual type guards",
-      body: "TypeScript 5.5 automatically infers type guards for functions returning boolean filter checks. This cleans up Array.prototype.filter() chains across our entire codebase.",
-    },
-    // c/ai_tools
-    {
-      comm: "ai_tools",
-      type: "text",
-      title: "Prompt Injection Defenses: Why passive data delimiters (<USER_SUBMITTED_TEXT>) are mandatory",
-      body: `When piping user content into LLMs for automated moderation or summarization, treating user strings as raw prompt text invites jailbreaks.
-Using explicit XML/HTML-style delimiters combined with unambiguous system instructions tells the model to treat the wrapped block strictly as inert payload.
+  // Fetch existing posts
+  const postSelect = hasSeedKey ? "id, seed_key, title" : "id, title";
+  const { data: existingPostsData } = await supabase.from("posts").select(postSelect);
+  const existingPostMap = new Map<string, string>(); // seed_key or title -> id
+  for (const p of existingPostsData || []) {
+    if (hasSeedKey && (p as any).seed_key) {
+      existingPostMap.set((p as any).seed_key, p.id);
+    }
+    existingPostMap.set(p.title, p.id);
+  }
 
-In our stress tests, prompt boundary tags blocked 99.4% of directive override attempts.`,
-    },
-    {
-      comm: "ai_tools",
-      type: "link",
-      title: "Google AI Gemini 2.5 Flash: 1M token context window and sub-second reasoning latency",
-      url: "https://ai.google.dev",
-      body: "Official documentation and developer benchmarks for the Gemini 2.5 family of multimodal models.",
-    },
-    {
-      comm: "ai_tools",
-      type: "image",
-      title: "Quantization Benchmarks: FP16 vs INT8 vs INT4 Inference Latency & VRAM footprint",
-      image_path: "https://picsum.photos/seed/aitools1/1200/630",
-      body: "Detailed comparison charts across Llama-3-70B and Mistral-Large running locally on dual RTX 4090s.",
-    },
-    {
-      comm: "ai_tools",
-      type: "text",
-      title: "Thread Summarization Architectures: Combining SHA-256 caching with streaming synthesis",
-      body: "How we implemented discussion synthesis on Curia using content hashes of post comment counts to ensure zero redundant Gemini tokens.",
-    },
-    {
-      comm: "ai_tools",
-      type: "text",
-      title: "Building Deterministic Agents: Structured JSON Schemas in Production Workflows",
-      body: "Relying on regex to extract JSON from LLM prose is fragile. Native JSON schema enforcement ensures typed objects that never throw parsing errors.",
-    },
-    // c/startups
-    {
-      comm: "startups",
-      type: "text",
-      title: "From 0 to $20k MRR in 8 months: The unglamorous technical and sales truth",
-      body: `Most startup stories gloss over the sheer volume of manual outreach required in the early days.
-Here is what actually drove our growth:
-1. Building in public on Curia and Twitter.
-2. Talking to 5 churned customers every week without being defensive.
-3. Saying no to enterprise customization requests that would derail our product roadmap.`,
-    },
-    {
-      comm: "startups",
-      type: "link",
-      title: "Paul Graham: How to Get Startup Ideas and Discover Organic Demand",
-      url: "https://paulgraham.com/startupideas.html",
-      body: "The classic essay on living at the leading edge and noticing what is missing.",
-    },
-    {
-      comm: "startups",
-      type: "image",
-      title: "Our Cohort Retention Curve After Shipping the New Onboarding Flow",
-      image_path: "https://picsum.photos/seed/startups1/1200/630",
-      body: "Month 1 retention flattened at 48% after simplifying signup and adding instant workspace presets.",
-    },
-    {
-      comm: "startups",
-      type: "text",
-      title: "Solo Founder vs Co-founder: Lessons after founding both ways",
-      body: "Going solo gives you speed and absolute decision-making autonomy. Having a technical co-founder provides psychological resilience during the inevitable troughs of sorrow.",
-    },
-    {
-      comm: "startups",
-      type: "text",
-      title: "Bootstrapping on Free Tiers: How modern tech stacks keep burn rate near zero",
-      body: "Using Supabase free tier for PostgreSQL and Auth, Vercel for edge deployment, and Google AI Studio for Gemini prototyping lets founders validate PMF before raising capital.",
-    },
-    // c/design
-    {
-      comm: "design",
-      type: "text",
-      title: "Designing for Darkness: Obsidian tokens, soft borders, and luminance hierarchy",
-      body: `Pure black (#000000) causes intense eye strain and harsh contrast with bright white text.
-Curia uses #0B0D12 for the background, #12151C for cards, and #181C25 for interactive surfaces.
-Paired with 1px borders (#232834) and subtle violet glows, the interface achieves depth without visual noise.`,
-    },
-    {
-      comm: "design",
-      type: "image",
-      title: "Typography Scale Comparison: Inter UI vs JetBrains Mono for Metadata",
-      image_path: "https://picsum.photos/seed/design1/1200/630",
-      body: "Visual specimen of our twin font pairing across badges, timestamps, and body paragraphs.",
-    },
-    {
-      comm: "design",
-      type: "link",
-      title: "Refactoring UI: Practical design advice for developers without design degrees",
-      url: "https://www.refactoringui.com",
-      body: "Essential reading for engineers who want their apps to look intentional and polished.",
-    },
-    {
-      comm: "design",
-      type: "text",
-      title: "Micro-interactions that matter: 150ms transitions and optimistic feedback",
-      body: "Why perceived speed matters more than raw benchmark milliseconds. Immediate button scale animations and instant vote score increments make web apps feel native.",
-    },
-    {
-      comm: "design",
-      type: "text",
-      title: "Designing Accessible Forms: Floating labels, inline validation, and keyboard traps",
-      body: "Ensuring every input has clear error states, aria-describedby links, and natural tab order.",
-    },
-    // c/gaming
-    {
-      comm: "gaming",
-      type: "text",
-      title: "Building a custom voxel engine in Rust and WGPU: 60 FPS at 32 chunk render distance",
-      body: `Greedy meshing combined with compute shader frustum culling gave us a 4x framerate uplift.
-We moved chunk generation entirely to multi-threaded Rayon workers, eliminating main-thread stuttering completely.`,
-    },
-    {
-      comm: "gaming",
-      type: "image",
-      title: "Raytraced Global Illumination Screenshot in Godot 4.3 Forward+ Renderer",
-      image_path: "https://picsum.photos/seed/gaming1/1200/630",
-      body: "Testing emissive material bounce lighting inside an abandoned sci-fi reactor bay.",
-    },
-    {
-      comm: "gaming",
-      type: "link",
-      title: "GDC Talk: The Netcode of Rocket League — Physics Prediction and Client Synchronization",
-      url: "https://www.youtube.com/watch?v=ueEmiDM94IE",
-      body: "Masterclass on deterministic lockstep physics simulation and rollback client architecture.",
-    },
-    {
-      comm: "gaming",
-      type: "text",
-      title: "Shader Development 101: Understanding Signed Distance Functions (SDFs)",
-      body: "A beginner-friendly breakdown of mathematical raymarching and procedural geometric modeling in GLSL.",
-    },
-    {
-      comm: "gaming",
-      type: "text",
-      title: "Asset Streaming & Virtual Texturing: Managing 8K textures without VRAM exhaustion",
-      body: "Techniques for streaming mipmaps on-demand directly from NVMe SSDs into GPU memory.",
-    },
-    // c/books
-    {
-      comm: "books",
-      type: "text",
-      title: "Deep Dive into 'Designing Data-Intensive Applications' by Martin Kleppmann: 5 Key Insights",
-      body: `1. Reliability, Scalability, and Maintainability are concrete mathematical engineering trade-offs, not buzzwords.
-2. Partitioning and Replication are fundamentally orthogonal strategies.
-3. Consensus algorithms (Raft, Paxos) solve the fundamental problem of distributed coordination under network partitions.
-4. Stream processing bridges the gap between batch analytics and low-latency transactional state.
-5. Strong consistency comes with undeniable availability penalties (CAP theorem).`,
-    },
-    {
-      comm: "books",
-      type: "link",
-      title: "Structure and Interpretation of Computer Programs (SICP) — Free Interactive Edition",
-      url: "https://sourceacademy.org/sicpjs",
-      body: "The legendary MIT computer science curriculum rewritten with interactive JavaScript/Scheme evaluations.",
-    },
-    {
-      comm: "books",
-      type: "image",
-      title: "My 2026 Systems Architecture Reading List & Study Mindmap",
-      image_path: "https://picsum.photos/seed/books1/1200/630",
-      body: "Covering distributed systems, database internals, OS architecture, and network protocols.",
-    },
-    {
-      comm: "books",
-      type: "text",
-      title: "Review: 'Database Internals' by Alex Petrov — How storage engines actually work",
-      body: "An indispensable guide comparing B-Trees vs LSM-Trees, write-ahead logs, and page buffer management.",
-    },
-    {
-      comm: "books",
-      type: "text",
-      title: "Clean Code vs Pragmatic Programmer: Which philosophy aged better in modern engineering?",
-      body: "Comparing dogmatic object-oriented clean code with pragmatic, composable software craftsmanship.",
-    },
-    // c/fitness
-    {
-      comm: "fitness",
-      type: "text",
-      title: "Ergonomics for Engineers: How I cured chronic RSI and lower back fatigue",
-      body: `After 10 years of 12-hour terminal sessions, severe cubital tunnel syndrome almost ended my career.
-What reversed it:
-1. Split ergonomic mechanical keyboard with tenting (Corne / Ergodox).
-2. Vertical optical mouse that eliminates forearm pronation.
-3. 25-minute Pomodoro timer enforcing 2 minutes of wrist extensor stretches.
-4. Heavy barbell deadlifts and pull-ups to build rear chain strength.`,
-    },
-    {
-      comm: "fitness",
-      type: "image",
-      title: "My Minimalist Standing Desk Cable Management & Monitor Height Setup",
-      image_path: "https://picsum.photos/seed/fitness1/1200/630",
-      body: "Dual monitor arms positioned exactly at eye level with hidden under-desk cable raceways.",
-    },
-    {
-      comm: "fitness",
-      type: "link",
-      title: "Huberman Lab: Science-backed protocols for sleep, morning sunlight, and physical energy",
-      url: "https://www.hubermanlab.com",
-      body: "Essential protocols for optimizing circadian rhythm and sustaining cognitive performance.",
-    },
-    {
-      comm: "fitness",
-      type: "text",
-      title: "Walking Pads under standing desks: 15,000 steps while answering Slack and reviewing PRs",
-      body: "How adding a quiet 2 mph under-desk treadmill transformed daily energy levels and eliminated afternoon slumps.",
-    },
-    {
-      comm: "fitness",
-      type: "text",
-      title: "Eye Health for Screen Workers: The 20-20-20 rule and ambient lighting calibration",
-      body: "Reducing digital eye strain with warm backlight bias lighting and intentional distance refocusing.",
-    },
-    // c/askcuria
-    {
-      comm: "askcuria",
-      type: "text",
-      title: "Senior engineers: What is one piece of architectural advice you wish you knew at year 3?",
-      body: `If you could travel back to when you were 3 years into your software career, what would you emphasize?
-For me, it was: 'Do not optimize for hypothetical scale before you have actual paying customers hitting bottlenecks.'
-Simplicity and code deletion are the greatest engineering virtues.
+  // Ordering: P24 first, then sort remaining posts by ageDays descending (oldest to newest)
+  const p24Post = posts.find((p) => p.key === "P24")!;
+  const otherPosts = posts.filter((p) => p.key !== "P24").sort((a, b) => b.ageDays - a.ageDays);
+  const orderedPosts = [p24Post, ...otherPosts];
 
-What is yours?`,
-    },
-    {
-      comm: "askcuria",
-      type: "text",
-      title: "How do you evaluate new dependencies before adding them to package.json?",
-      body: "What is your checklist for adopting a third-party library? Bundle size? Open issues? Maintenance cadence? Corporate backing?",
-    },
-    {
-      comm: "askcuria",
-      type: "text",
-      title: "Monolith vs Microservices: When did your team regret splitting too early?",
-      body: "Share your war stories of distributed transactions, network latency hops, and debugging nightmare traces.",
-    },
-    {
-      comm: "askcuria",
-      type: "text",
-      title: "What is your favorite underappreciated CLI productivity tool?",
-      body: "Tools like fzf, zoxide, ripgrep, jq, and bat have 10x'd my terminal navigation. What obscure gems do you swear by?",
-    },
-    {
-      comm: "askcuria",
-      type: "text",
-      title: "How do you structure code review etiquette to prevent burnout and bike-shedding?",
-      body: "Techniques for keeping PRs under 400 lines, separating stylistic nits from blocking bugs, and maintaining psychological safety.",
-    },
-  ];
+  const nowMs = Date.now();
+  const postIdMap = new Map<string, { id: string; createdAt: Date }>(); // post.key -> { id, createdAt }
+  let postsCreated = 0;
+  let postsSkipped = 0;
 
-  const createdPosts: { id: string; title: string; commName: string; commId: string }[] = [];
+  for (const post of orderedPosts) {
+    const existingId = existingPostMap.get(post.key) || existingPostMap.get(post.title);
+    const commId = commMap.get(post.community);
+    const authorId = userMap.get(post.author);
 
-  for (let i = 0; i < POST_TEMPLATES.length; i++) {
-    const tpl = POST_TEMPLATES[i];
-    const comm = commMap.get(tpl.comm);
-    if (!comm) continue;
+    // Compute deterministic creation time
+    const rng = createPRNG(stringToSeed(post.key));
+    const hourOffsetMs = Math.floor(rng() * 24) * 3600000 + Math.floor(rng() * 60) * 60000;
+    const postCreatedAt = new Date(nowMs - post.ageDays * 86400000 + hourOffsetMs);
 
-    const author = userList[i % userList.length];
-    // Varied timestamp over the last 30 days
-    const daysAgo = Math.floor(Math.random() * 28) + 1;
-    const createdAt = new Date(Date.now() - daysAgo * 86400000 + (i * 3600000)).toISOString();
-
-    const { data: existingPost } = await admin
-      .from("posts")
-      .select("id, title")
-      .eq("title", tpl.title)
-      .eq("community_id", comm.id)
-      .maybeSingle();
-
-    if (existingPost) {
-      createdPosts.push({ id: existingPost.id, title: existingPost.title, commName: tpl.comm, commId: comm.id });
+    if (existingId) {
+      postIdMap.set(post.key, { id: existingId, createdAt: postCreatedAt });
+      postsSkipped++;
     } else {
-      const isPinned = (tpl.comm === "webdev" && i === 0) || (tpl.comm === "ai_tools" && i === 5);
+      if (isDryRun) {
+        const fakeId = `dry-run-post-${post.key}`;
+        postIdMap.set(post.key, { id: fakeId, createdAt: postCreatedAt });
+        postsCreated++;
+      } else {
+        const postPayload: any = {
+          community_id: commId,
+          author_id: authorId,
+          type: post.type,
+          title: post.title,
+          body: post.body,
+          url: post.url || null,
+          image_path: post.imageUrl || null,
+          is_pinned: post.pinned,
+          created_at: postCreatedAt.toISOString(),
+        };
+        if (hasSeedKey) {
+          postPayload.seed_key = post.key;
+        }
 
-      const { data: newP, error: postErr } = await admin
-        .from("posts")
-        .insert({
-          community_id: comm.id,
-          author_id: author.id,
-          type: tpl.type as "text" | "link" | "image",
-          title: tpl.title,
-          body: tpl.body || null,
-          url: tpl.url || null,
-          image_path: tpl.image_path || null,
-          is_pinned: isPinned,
-          score: 5 + Math.floor(Math.random() * 85),
-          comment_count: 0,
-          created_at: createdAt,
-        } as any)
-        .select("id, title")
-        .single();
+        const { data: newPost, error: postErr } = await supabase
+          .from("posts")
+          .insert(postPayload)
+          .select("id")
+          .single();
 
-      if (postErr || !newP) {
-        console.error(`Error creating post "${tpl.title}":`, postErr?.message);
-        continue;
+        if (postErr || !newPost) {
+          console.error(`❌ Failed to create post ${post.key} (${post.title}):`, postErr?.message);
+          process.exit(1);
+        }
+
+        postIdMap.set(post.key, { id: newPost.id, createdAt: postCreatedAt });
+        postsCreated++;
       }
-
-      createdPosts.push({ id: newP.id, title: newP.title, commName: tpl.comm, commId: comm.id });
     }
   }
 
-  console.log(`✅ ${createdPosts.length} posts seeded / verified.`);
+  console.log(`   Result: ${postsCreated} created, ${postsSkipped} skipped (already present)`);
 
-  // 4. Provision 150 Comments with Nested Hierarchies
-  console.log("\n💬 Seeding 150 hierarchical comments...");
+  // --------------------------------------------------------------------------
+  // STEP 4: COMMENTS (Hand-written Threads T1-T4 + Filler Comments)
+  // --------------------------------------------------------------------------
+  console.log("\n--- [Step 4/6] Comments (42 Hand-written + 147 Filler = 189 Total) ---");
 
-  const COMMENT_SNIPPETS = [
-    "Completely agree with this perspective. We saw identical latency improvements in our staging tests.",
-    "Interesting trade-off, though I wonder how this pattern scales when distributed over multiple regions?",
-    "Could you elaborate on how you handled connection pool timeouts during peak traffic spikes?",
-    "We adopted a similar approach last quarter and it cut our cloud hosting bill by nearly 35%.",
-    "Great point on deterministic schemas. LLMs without strict response schemas are virtually unusable in production.",
-    "One subtle caveat with this approach is handling cache invalidation when background jobs update rows.",
-    "This was the exact architectural bottleneck we faced. Thanks for writing such a clear post-mortem!",
-    "Strongly recommend pairing this with OpenTelemetry distributed traces to capture request hops.",
-    "Have you evaluated using DuckDB for local analytics before pushing to the cloud warehouse?",
-    "The contrast between pure black and dark obsidian surfaces is night and day for eye fatigue.",
-    "We implemented the exact same 25-minute Pomodoro routine and it completely eliminated wrist strain.",
-    "This is why I love the Curia engineering community. Real, substantive technical discussions without hype.",
-    "Do you have a minimal reproduction repo or gist showing the exact Next.js route handler config?",
-    "The 150ms transition rule is spot on. Perceived responsiveness keeps users engaged.",
-    "Excellent breakdown of consensus algorithms. Martin Kleppmann's book is truly the Bible of distributed systems.",
-  ];
-
-  // Pick 2 posts to have 12+ comments for AI summarizer verification
-  const summarizerPost1 = createdPosts[0]; // webdev post
-  const summarizerPost2 = createdPosts[5]; // ai_tools post
-
-  let totalCommentsCreated = 0;
-
-  for (let pIdx = 0; pIdx < createdPosts.length; pIdx++) {
-    const p = createdPosts[pIdx];
-
-    // Determine target comment count for this post:
-    // Summarizer posts get 14-16 comments; others get 2-5 comments
-    const isSummarizerTarget = p.id === summarizerPost1?.id || p.id === summarizerPost2?.id;
-    const targetCount = isSummarizerTarget ? 15 : Math.floor(Math.random() * 4) + 2;
-
-    const { data: existingComments } = await admin
+  // Fetch existing comments (paginated)
+  const commentSelect = hasSeedKey ? "id, seed_key, body, post_id" : "id, body, post_id";
+  const allExistingComments: any[] = [];
+  let cFrom = 0;
+  const PAGE_SIZE = 1000;
+  while (true) {
+    const { data: cPage } = await supabase
       .from("comments")
-      .select("id")
-      .eq("post_id", p.id);
+      .select(commentSelect)
+      .range(cFrom, cFrom + PAGE_SIZE - 1);
+    if (!cPage || cPage.length === 0) break;
+    allExistingComments.push(...cPage);
+    if (cPage.length < PAGE_SIZE) break;
+    cFrom += PAGE_SIZE;
+  }
 
-    const existingCount = existingComments?.length || 0;
-    if (existingCount >= targetCount) {
-      totalCommentsCreated += existingCount;
+  const existingCommentMap = new Map<string, string>(); // seed_key or (postId+body) -> id
+  for (const c of allExistingComments) {
+    if (hasSeedKey && (c as any).seed_key) {
+      existingCommentMap.set((c as any).seed_key, c.id);
+    }
+    existingCommentMap.set(`${c.post_id}_${c.body}`, c.id);
+  }
+
+  const commentIdMap = new Map<string, string>(); // seed_key -> comment_id
+  let commentsCreated = 0;
+  let commentsSkipped = 0;
+
+  // 4A. Threaded Comments (T1 to T4)
+  const threadPostKeyMap: Record<"T1" | "T2" | "T3" | "T4", string> = {
+    T1: "P01",
+    T2: "P04",
+    T3: "P22",
+    T4: "P07",
+  };
+
+  async function insertThreadNodes(
+    nodes: ThreadCommentNode[],
+    postId: string,
+    postCreatedAt: Date,
+    parentId: string | null = null
+  ) {
+    for (const node of nodes) {
+      const seedKey = node.key!;
+      const existingId = existingCommentMap.get(seedKey) || existingCommentMap.get(`${postId}_${node.body}`);
+
+      if (existingId) {
+        commentIdMap.set(seedKey, existingId);
+        commentsSkipped++;
+        if (node.replies && node.replies.length > 0) {
+          await insertThreadNodes(node.replies, postId, postCreatedAt, existingId);
+        }
+      } else {
+        const offsetMinutes = parseOffsetToMinutes(node.offset);
+        const commentCreatedAt = new Date(postCreatedAt.getTime() + offsetMinutes * 60000);
+        const authorId = userMap.get(node.author);
+
+        if (isDryRun) {
+          const fakeId = `dry-run-comment-${seedKey}`;
+          commentIdMap.set(seedKey, fakeId);
+          commentsCreated++;
+          if (node.replies && node.replies.length > 0) {
+            await insertThreadNodes(node.replies, postId, postCreatedAt, fakeId);
+          }
+        } else {
+          const commentPayload: any = {
+            post_id: postId,
+            author_id: authorId,
+            parent_id: parentId,
+            body: node.body,
+            created_at: commentCreatedAt.toISOString(),
+          };
+          if (hasSeedKey) {
+            commentPayload.seed_key = seedKey;
+          }
+
+          const { data: newComment, error: commErr } = await supabase
+            .from("comments")
+            .insert(commentPayload)
+            .select("id")
+            .single();
+
+          if (commErr || !newComment) {
+            console.error(`❌ Failed to insert thread comment ${seedKey}:`, commErr?.message);
+            process.exit(1);
+          }
+
+          commentIdMap.set(seedKey, newComment.id);
+          commentsCreated++;
+
+          if (node.replies && node.replies.length > 0) {
+            await insertThreadNodes(node.replies, postId, postCreatedAt, newComment.id);
+          }
+        }
+      }
+    }
+  }
+
+  for (const [threadKey, threadNodes] of Object.entries(threads) as [
+    "T1" | "T2" | "T3" | "T4",
+    ThreadCommentNode[]
+  ][]) {
+    const postKey = threadPostKeyMap[threadKey];
+    const postInfo = postIdMap.get(postKey)!;
+    await insertThreadNodes(threadNodes, postInfo.id, postInfo.createdAt, null);
+  }
+
+  // 4B. Filler Comments for Non-Threaded Posts
+  const nonThreadedPosts = posts.filter((p) => p.threadKey === null);
+
+  for (const post of nonThreadedPosts) {
+    const postInfo = postIdMap.get(post.key)!;
+    const commDef = communities.find((c) => c.name === post.community)!;
+    // Eligible commenters: must be a member of this community and NOT the post author
+    const eligibleCommenters = commDef.members.filter((m) => m !== post.author);
+    if (eligibleCommenters.length === 0) {
+      console.warn(`⚠️ Warning: No eligible commenters for post ${post.key} in c/${post.community}`);
       continue;
     }
 
-    const needed = targetCount - existingCount;
-    const parentStack: { id: string; depth: number; path: string }[] = [];
+    // Community specific text pool + generic pool
+    const commPool = fillerPools.perCommunity[post.community] || [];
+    const fullTextPool = [...fillerPools.generic, ...commPool];
 
-    for (let c = 0; c < needed; c++) {
-      const commenter = userList[(pIdx + c) % userList.length];
-      const snippet = COMMENT_SNIPPETS[(pIdx * 3 + c) % COMMENT_SNIPPETS.length];
+    const rng = createPRNG(stringToSeed(`filler_${post.key}`));
+    const generatedCommentIds: string[] = [];
 
-      let parentId: string | null = null;
-      let depth = 0;
-      let pathStr = `${Date.now()}_${c}`;
+    for (let i = 0; i < post.targetCommentCount; i++) {
+      const seedKey = `F-${post.key}-${i + 1}`;
+      // Use distinct text from pool for each index to avoid duplicate text collisions on same post
+      const text = fullTextPool[i % fullTextPool.length];
+      const existingId = (hasSeedKey ? existingCommentMap.get(seedKey) : null) || existingCommentMap.get(`${postInfo.id}_${text}`);
 
-      // Create hierarchy up to depth 5
-      if (parentStack.length > 0 && Math.random() > 0.4 && parentStack[parentStack.length - 1].depth < 5) {
-        const parent = parentStack[parentStack.length - 1];
-        parentId = parent.id;
-        depth = parent.depth + 1;
-        pathStr = `${parent.path}.${c}`;
-      }
+      if (existingId) {
+        commentIdMap.set(seedKey, existingId);
+        generatedCommentIds.push(existingId);
+        commentsSkipped++;
+      } else {
+        // Pick commenter deterministically
+        const authorUsername = eligibleCommenters[Math.floor(rng() * eligibleCommenters.length)];
+        const authorId = userMap.get(authorUsername);
 
-      const { data: newComment, error: commentErr } = await admin
-        .from("comments")
-        .insert({
-          post_id: p.id,
-          author_id: commenter.id,
-          parent_id: parentId,
-          depth,
-          path: pathStr,
-          body: snippet,
-          score: 1 + Math.floor(Math.random() * 25),
-        } as any)
-        .select("id, depth, path")
-        .single();
+        // Pick parent: ~70% top-level, ~30% reply up to depth 3
+        let parentId: string | null = null;
+        if (i > 0 && rng() > 0.7 && generatedCommentIds.length > 0) {
+          parentId = generatedCommentIds[Math.floor(rng() * generatedCommentIds.length)];
+        }
 
-      if (!commentErr && newComment) {
-        totalCommentsCreated++;
-        parentStack.push({ id: newComment.id, depth: newComment.depth, path: newComment.path });
+        // Spread timestamps between +10 minutes and +3 days (capped at nowMs)
+        const minOffsetMinutes = 10;
+        const maxOffsetMinutes = 3 * 24 * 60; // 4320 mins
+        const randomMinutes = minOffsetMinutes + Math.floor(rng() * (maxOffsetMinutes - minOffsetMinutes));
+        let commentTimeMs = postInfo.createdAt.getTime() + randomMinutes * 60000;
+        if (commentTimeMs > nowMs) {
+          commentTimeMs = nowMs - (post.targetCommentCount - i) * 60000; // Keep slightly before now
+        }
+        const commentCreatedAt = new Date(commentTimeMs);
+
+        if (isDryRun) {
+          const fakeId = `dry-run-comment-${seedKey}`;
+          commentIdMap.set(seedKey, fakeId);
+          generatedCommentIds.push(fakeId);
+          commentsCreated++;
+        } else {
+          const commentPayload: any = {
+            post_id: postInfo.id,
+            author_id: authorId,
+            parent_id: parentId,
+            body: text,
+            created_at: commentCreatedAt.toISOString(),
+          };
+          if (hasSeedKey) {
+            commentPayload.seed_key = seedKey;
+          }
+
+          const { data: newComment, error: commErr } = await supabase
+            .from("comments")
+            .insert(commentPayload)
+            .select("id")
+            .single();
+
+          if (commErr || !newComment) {
+            console.error(`❌ Failed to insert filler comment ${seedKey}:`, commErr?.message);
+            process.exit(1);
+          }
+
+          commentIdMap.set(seedKey, newComment.id);
+          generatedCommentIds.push(newComment.id);
+          commentsCreated++;
+        }
       }
     }
-
-    // Update actual comment count on post
-    const { count: exactCount } = await admin
-      .from("comments")
-      .select("id", { count: "exact", head: true })
-      .eq("post_id", p.id);
-
-    await admin.from("posts").update({ comment_count: exactCount || 0 }).eq("id", p.id);
   }
 
-  console.log(`✅ Total comments across database: ~${totalCommentsCreated}`);
+  console.log(`   Result: ${commentsCreated} created, ${commentsSkipped} skipped (already present)`);
 
-  // 5. Add Realistic Votes
-  console.log("\n🗳️ Adding realistic community votes...");
-  const samplePosts = createdPosts.slice(0, 25);
-  for (const p of samplePosts) {
-    const voters = userList.slice(0, 5);
-    for (const v of voters) {
-      await admin.from("votes").upsert(
-        {
-          post_id: p.id,
-          user_id: v.id,
-          value: 1,
-        },
-        { onConflict: "post_id,user_id" }
-      );
+  // --------------------------------------------------------------------------
+  // STEP 5: ATOMIC VOTES
+  // --------------------------------------------------------------------------
+  console.log("\n--- [Step 5/6] Votes (Posts & Comments) ---");
+
+  // Fetch existing votes (paginated)
+  const allExistingVotes: any[] = [];
+  let vFrom = 0;
+  while (true) {
+    const { data: vPage } = await supabase
+      .from("votes")
+      .select("post_id, comment_id, user_id")
+      .range(vFrom, vFrom + PAGE_SIZE - 1);
+    if (!vPage || vPage.length === 0) break;
+    allExistingVotes.push(...vPage);
+    if (vPage.length < PAGE_SIZE) break;
+    vFrom += PAGE_SIZE;
+  }
+
+  const existingPostVoteUsers = new Map<string, Set<string>>(); // postId -> Set<userId>
+  const existingCommentVoteUsers = new Map<string, Set<string>>(); // commentId -> Set<userId>
+  for (const v of allExistingVotes) {
+    if (v.post_id) {
+      if (!existingPostVoteUsers.has(v.post_id)) existingPostVoteUsers.set(v.post_id, new Set());
+      existingPostVoteUsers.get(v.post_id)!.add(v.user_id);
+    }
+    if (v.comment_id) {
+      if (!existingCommentVoteUsers.has(v.comment_id)) existingCommentVoteUsers.set(v.comment_id, new Set());
+      existingCommentVoteUsers.get(v.comment_id)!.add(v.user_id);
     }
   }
 
-  console.log("✅ Voting seeded successfully.");
-  console.log("\n🎉 Curia Database Seeding Finished Successfully!");
-}
+  let postVotesCreated = 0;
+  let postVotesSkipped = 0;
+  let commentVotesCreated = 0;
+  let commentVotesSkipped = 0;
 
-// --------------------------------------------------------------------------
-// MAIN ENTRYPOINT
-// --------------------------------------------------------------------------
-async function main() {
-  const isReset = process.argv.includes("--reset");
-  if (isReset) {
-    await resetDemoData();
+  // 5A. Post Votes
+  for (const post of posts) {
+    const postInfo = postIdMap.get(post.key)!;
+    const existingVoters = existingPostVoteUsers.get(postInfo.id) || new Set();
+
+    if (existingVoters.size > 0) {
+      postVotesSkipped++;
+      continue;
+    }
+
+    const rng = createPRNG(stringToSeed(`post_vote_${post.key}`));
+    // Eligible voters: all 12 demo users except the author
+    const eligibleVoters = users
+      .filter((u) => u.username !== post.author)
+      .map((u) => userMap.get(u.username)!);
+    const shuffledVoters = shuffleWithRng(eligibleVoters, rng);
+
+    const targetScore = post.score;
+    // Post scores are at most 11. Net score = Up - Down = targetScore.
+    // If targetScore + 2 <= 11 and targetScore > 0, we can add 1 downvote to make scores natural.
+    let upvotesCount = targetScore;
+    let downvotesCount = 0;
+    if (targetScore > 0 && targetScore + 2 <= shuffledVoters.length) {
+      upvotesCount = targetScore + 1;
+      downvotesCount = 1;
+    }
+
+    const upvoterIds = shuffledVoters.slice(0, upvotesCount);
+    const downvoterIds = shuffledVoters.slice(upvotesCount, upvotesCount + downvotesCount);
+
+    const votesToInsert: Array<{ user_id: string; post_id: string; value: number }> = [];
+    for (const uid of upvoterIds) votesToInsert.push({ user_id: uid, post_id: postInfo.id, value: 1 });
+    for (const uid of downvoterIds) votesToInsert.push({ user_id: uid, post_id: postInfo.id, value: -1 });
+
+    if (!isDryRun && votesToInsert.length > 0) {
+      const { error: voteErr } = await supabase.from("votes").insert(votesToInsert);
+      if (voteErr) {
+        console.error(`❌ Failed to insert votes for post ${post.key}:`, voteErr.message);
+        process.exit(1);
+      }
+    }
+    postVotesCreated += votesToInsert.length;
+  }
+
+  // 5B. Comment Votes (Threaded Nodes)
+  async function voteOnThreadNodes(nodes: ThreadCommentNode[]) {
+    for (const node of nodes) {
+      const commentId = commentIdMap.get(node.key!)!;
+      const existingVoters = existingCommentVoteUsers.get(commentId) || new Set();
+
+      if (existingVoters.size > 0) {
+        commentVotesSkipped++;
+      } else {
+        const rng = createPRNG(stringToSeed(`comment_vote_${node.key}`));
+        const eligibleVoters = users
+          .filter((u) => u.username !== node.author)
+          .map((u) => userMap.get(u.username)!);
+        const shuffledVoters = shuffleWithRng(eligibleVoters, rng);
+
+        const targetScore = node.score;
+        let upvotesCount = targetScore;
+        let downvotesCount = 0;
+        if (targetScore > 0 && targetScore + 2 <= shuffledVoters.length) {
+          upvotesCount = targetScore + 1;
+          downvotesCount = 1;
+        }
+
+        const upvoterIds = shuffledVoters.slice(0, upvotesCount);
+        const downvoterIds = shuffledVoters.slice(upvotesCount, upvotesCount + downvotesCount);
+
+        const votesToInsert: Array<{ user_id: string; comment_id: string; value: number }> = [];
+        for (const uid of upvoterIds) {
+          if (!existingVoters.has(uid)) {
+            votesToInsert.push({ user_id: uid, comment_id: commentId, value: 1 });
+            existingVoters.add(uid);
+          }
+        }
+        for (const uid of downvoterIds) {
+          if (!existingVoters.has(uid)) {
+            votesToInsert.push({ user_id: uid, comment_id: commentId, value: -1 });
+            existingVoters.add(uid);
+          }
+        }
+        existingCommentVoteUsers.set(commentId, existingVoters);
+
+        if (!isDryRun && votesToInsert.length > 0) {
+          const { error: voteErr } = await supabase.from("votes").insert(votesToInsert);
+          if (voteErr) {
+            console.error(`❌ Failed to insert votes for comment ${node.key}:`, voteErr.message);
+            process.exit(1);
+          }
+        }
+        commentVotesCreated += votesToInsert.length;
+      }
+
+      if (node.replies && node.replies.length > 0) {
+        await voteOnThreadNodes(node.replies);
+      }
+    }
+  }
+
+  for (const threadNodes of Object.values(threads)) {
+    await voteOnThreadNodes(threadNodes);
+  }
+
+  // 5C. Comment Votes (Filler Comments: 1 to 6 votes each)
+  for (const post of nonThreadedPosts) {
+    for (let i = 0; i < post.targetCommentCount; i++) {
+      const seedKey = `F-${post.key}-${i + 1}`;
+      const commentId = commentIdMap.get(seedKey);
+      if (!commentId) continue;
+      const existingVoters = existingCommentVoteUsers.get(commentId) || new Set();
+
+      if (existingVoters.size > 0) {
+        commentVotesSkipped++;
+      } else {
+        const rng = createPRNG(stringToSeed(`filler_vote_${seedKey}`));
+        // Net score 1 to 6
+        const targetScore = 1 + Math.floor(rng() * 6);
+        const eligibleVoters = users.map((u) => userMap.get(u.username)!);
+        const shuffledVoters = shuffleWithRng(eligibleVoters, rng);
+
+        const upvoterIds = shuffledVoters.slice(0, targetScore);
+        const votesToInsert: Array<{ user_id: string; comment_id: string; value: number }> = [];
+        for (const uid of upvoterIds) {
+          if (!existingVoters.has(uid)) {
+            votesToInsert.push({ user_id: uid, comment_id: commentId, value: 1 });
+            existingVoters.add(uid);
+          }
+        }
+        existingCommentVoteUsers.set(commentId, existingVoters);
+
+        if (!isDryRun && votesToInsert.length > 0) {
+          const { error: voteErr } = await supabase.from("votes").insert(votesToInsert);
+          if (voteErr) {
+            console.error(`❌ Failed to insert votes for filler comment ${seedKey}:`, voteErr.message);
+            process.exit(1);
+          }
+        }
+        commentVotesCreated += votesToInsert.length;
+      }
+    }
+  }
+
+  console.log(`   Post votes:    ${postVotesCreated} created, ${postVotesSkipped} posts skipped (already voted)`);
+  console.log(`   Comment votes: ${commentVotesCreated} created, ${commentVotesSkipped} comments skipped (already voted)`);
+
+  // --------------------------------------------------------------------------
+  // STEP 6: RECOMPUTE HOT_RANK & CLEAN UP NOTIFICATIONS
+  // --------------------------------------------------------------------------
+  console.log("\n--- [Step 6/6] Hot Rank Maintenance & Notifications Polish ---");
+
+  if (!isDryRun) {
+    // 6A. Recompute hot_rank for all posts
+    const { data: allPosts } = await supabase.from("posts").select("id, score, created_at");
+    for (const p of allPosts || []) {
+      const s = Math.sign(p.score || 0);
+      const order = Math.log10(Math.max(Math.abs(p.score || 0), 1));
+      const epoch = new Date(p.created_at).getTime() / 1000;
+      const rank = Number((s * order + (epoch - 1700000000) / 45000.0).toFixed(7));
+      await supabase.from("posts").update({ hot_rank: rank }).eq("id", p.id);
+    }
+    console.log(`✔ Recomputed hot_rank for ${allPosts?.length || 0} posts.`);
+
+    // 6B. Notifications Polish:
+    // Mark every notification as read EXCEPT for aarav_dev
+    const aaravId = userMap.get("aarav_dev");
+    if (aaravId) {
+      // Mark all others as read
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .neq("user_id", aaravId);
+
+      // Keep aarav_dev's notifications unread
+      await supabase
+        .from("notifications")
+        .update({ is_read: false })
+        .eq("user_id", aaravId);
+
+      const { count: aaravUnreadCount } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", aaravId)
+        .eq("is_read", false);
+
+      console.log(`✔ Notifications updated: aarav_dev has ${aaravUnreadCount} unread notification(s).`);
+    }
   } else {
-    await seedDemoData();
+    console.log("[DRY RUN] Would recompute hot_rank and polish notifications.");
   }
+
+  console.log("\n=================================================================");
+  console.log("🎉 SEED PROCEDURE COMPLETED SUCCESSFULLY!");
+  console.log("=================================================================\n");
 }
 
-main().catch((err) => {
-  console.error("❌ Fatal error in seed script:", err);
-  process.exit(1);
-});
+// Execute Entrypoint
+if (isReset) {
+  runReset().catch((err) => {
+    console.error("❌ Reset uncaught error:", err);
+    process.exit(1);
+  });
+} else {
+  runSeed().catch((err) => {
+    console.error("❌ Seed uncaught error:", err);
+    process.exit(1);
+  });
+}

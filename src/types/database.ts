@@ -154,6 +154,7 @@ export type Database = {
           created_at: string;
           hot_rank: number;
           moderation_verdict?: string | null;
+          seed_key?: string | null;
         };
         Insert: {
           id?: string;
@@ -172,6 +173,7 @@ export type Database = {
           created_at?: string;
           hot_rank?: number;
           moderation_verdict?: string | null;
+          seed_key?: string | null;
         };
         Update: {
           id?: string;
@@ -190,6 +192,7 @@ export type Database = {
           created_at?: string;
           hot_rank?: number;
           moderation_verdict?: string | null;
+          seed_key?: string | null;
         };
         Relationships: [];
       };
@@ -206,6 +209,7 @@ export type Database = {
           is_removed: boolean;
           created_at: string;
           moderation_verdict?: string | null;
+          seed_key?: string | null;
         };
         Insert: {
           id?: string;
@@ -219,6 +223,7 @@ export type Database = {
           is_removed?: boolean;
           created_at?: string;
           moderation_verdict?: string | null;
+          seed_key?: string | null;
         };
         Update: {
           id?: string;
@@ -232,6 +237,7 @@ export type Database = {
           is_removed?: boolean;
           created_at?: string;
           moderation_verdict?: string | null;
+          seed_key?: string | null;
         };
         Relationships: [];
       };

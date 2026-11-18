@@ -248,6 +248,9 @@ export function PostDetailView({
   // Resolve Image URL
   const imageUrl = React.useMemo(() => {
     if (post.image_path) {
+      if (post.image_path.startsWith("http://") || post.image_path.startsWith("https://")) {
+        return post.image_path;
+      }
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
       return `${supabaseUrl}/storage/v1/object/public/post-images/${post.image_path}`;
     }

@@ -152,6 +152,22 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) to view Curia in your browser.
 
+---
+
+## 🌾 Demo Data Seeding & Verification
+
+Curia includes a fully typed, idempotent demo dataset based on `curia_demo_seed_data.md` representing 12 realistic technical users, 8 themed communities, 24 multi-type posts, 4 deep multi-level discussion trees, filler comments, and natural vote distributions.
+
+### Commands
+
+| Command | Description |
+| :--- | :--- |
+| `npm run seed:dry` | **Dry-Run Mode**: Validates the dataset, simulates all user, community, post, comment, and vote insertions without writing to the database. |
+| `CONFIRM_SEED=yes npm run seed` | **Live Seed**: Connects using `SUPABASE_SERVICE_ROLE_KEY`, checks and skips existing rows, provisions demo users, sets up communities, builds deep discussion hierarchies, records votes, recomputes `hot_rank`, and writes generated demo passwords to `.seed-credentials.local` (mode 0600, gitignored). |
+| `CONFIRM_SEED=yes npm run seed:reset` | **Clean Reset**: Safely purges demo data (posts, comments, votes, demo communities, and demo users) while preserving non-demo accounts and user-created data. |
+| `npm run seed:verify` | **Automated Audit**: Runs a 17-point verification suite checking exact entity counts, vote/karma mathematical consistency, comment nesting depth (P01 depth 6), pinned statuses, and codebase security isolation. |
+| `npm test` | **Unit Test Suite**: Runs Vitest suite (`scripts/__tests__/seed-data.test.ts`) validating raw seed constant counts and thread hierarchy structures. |
+
 ### 4. Build & Type Check
 ```bash
 npx tsc --noEmit
