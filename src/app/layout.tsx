@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/query-provider";
 import { AuthProvider } from "@/context/auth-context";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { Toaster } from "@/components/ui/sonner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -68,6 +69,7 @@ export default function RootLayout({
             <AuthProvider>
               {children}
               <AuthModal />
+              <Toaster />
             </AuthProvider>
           </QueryProvider>
         </ThemeProvider>

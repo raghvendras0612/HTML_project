@@ -28,6 +28,7 @@ function LoginForm() {
   const { signInWithEmail, signInWithGoogle } = useUser();
   const [submitting, setSubmitting] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (authError) {
@@ -50,28 +51,33 @@ function LoginForm() {
 
   const onSubmit = async (values: LoginFormValues) => {
     setSubmitting(true);
+    setFormError(null);
     const { error } = await signInWithEmail(values.email, values.password);
     setSubmitting(false);
 
     if (error) {
+      setFormError(error);
       toast.error(error);
       return;
     }
 
     toast.success("Signed in successfully!");
-    router.push(nextUrl);
-    router.refresh();
+    window.location.href = nextUrl;
   };
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
+    setFormError(null);
     const { error } = await signInWithGoogle(nextUrl);
     setGoogleLoading(false);
     if (error) {
       console.error("[Login Page] Google sign-in failed:", error);
+      setFormError(error);
       toast.error(error);
     }
   };
+
+  const displayError = authError || formError;
 
   return (
     <Card className="w-full curia-card shadow-xl border-border bg-surface">
@@ -83,9 +89,9 @@ function LoginForm() {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {authError && (
+        {displayError && (
           <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger flex items-start gap-2">
-            <span>{authError}</span>
+            <span>{displayError}</span>
           </div>
         )}
 

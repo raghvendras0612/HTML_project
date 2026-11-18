@@ -35,6 +35,7 @@ function SignupForm() {
   const { signUpWithEmail, signInWithGoogle } = useUser();
   const [submitting, setSubmitting] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
   const [confirmationEmail, setConfirmationEmail] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -59,6 +60,7 @@ function SignupForm() {
 
   const onSubmit = async (values: SignupFormValues) => {
     setSubmitting(true);
+    setFormError(null);
     const { error, confirmationRequired } = await signUpWithEmail(
       values.email,
       values.password,
@@ -67,6 +69,7 @@ function SignupForm() {
     setSubmitting(false);
 
     if (error) {
+      setFormError(error);
       toast.error(error);
       return;
     }
@@ -76,20 +79,23 @@ function SignupForm() {
       toast.success("Confirmation email sent! Please check your inbox.");
     } else {
       toast.success("Account created successfully!");
-      router.push(nextUrl);
-      router.refresh();
+      window.location.href = nextUrl;
     }
   };
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
+    setFormError(null);
     const { error } = await signInWithGoogle(nextUrl);
     setGoogleLoading(false);
     if (error) {
       console.error("[Signup Page] Google sign-in failed:", error);
+      setFormError(error);
       toast.error(error);
     }
   };
+
+  const displayError = authError || formError;
 
   if (confirmationEmail) {
     return (
@@ -121,9 +127,9 @@ function SignupForm() {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {authError && (
+        {displayError && (
           <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger flex items-start gap-2">
-            <span>{authError}</span>
+            <span>{displayError}</span>
           </div>
         )}
 

@@ -89,8 +89,6 @@ export function AppShell({
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
       />
-      <AuthModal />
-      <Toaster />
     </div>
   );
 }
