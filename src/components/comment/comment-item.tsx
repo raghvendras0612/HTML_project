@@ -52,7 +52,7 @@ export function CommentItem({
   isCommunityModerator = false,
   isUserBanned = false,
   onCommentUpdated,
-  maxDepthThreshold = 6,
+  maxDepthThreshold = 5,
 }: CommentItemProps) {
   const { user, openAuthModal } = useAuth();
   const [comment, setComment] = React.useState<CommentWithRelations>(initialComment);

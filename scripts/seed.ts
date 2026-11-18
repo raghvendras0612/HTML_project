@@ -358,7 +358,7 @@ async function runSeed() {
         }
 
         commId = newComm.id;
-        commMap.set(comm.name, commId);
+        commMap.set(comm.name, newComm.id);
         commsCreated++;
       }
     }
@@ -424,11 +424,12 @@ async function runSeed() {
 
   // Fetch existing posts
   const postSelect = hasSeedKey ? "id, seed_key, title" : "id, title";
-  const { data: existingPostsData } = await supabase.from("posts").select(postSelect);
+  const { data: existingPostsData } = await supabase.from("posts").select(postSelect as any);
   const existingPostMap = new Map<string, string>(); // seed_key or title -> id
-  for (const p of existingPostsData || []) {
-    if (hasSeedKey && (p as any).seed_key) {
-      existingPostMap.set((p as any).seed_key, p.id);
+  const existingPostsList = (existingPostsData as Array<{ id: string; seed_key?: string | null; title: string }> | null) || [];
+  for (const p of existingPostsList) {
+    if (hasSeedKey && p.seed_key) {
+      existingPostMap.set(p.seed_key, p.id);
     }
     existingPostMap.set(p.title, p.id);
   }
@@ -509,7 +510,7 @@ async function runSeed() {
   while (true) {
     const { data: cPage } = await supabase
       .from("comments")
-      .select(commentSelect)
+      .select(commentSelect as any)
       .range(cFrom, cFrom + PAGE_SIZE - 1);
     if (!cPage || cPage.length === 0) break;
     allExistingComments.push(...cPage);
@@ -908,11 +909,25 @@ async function runSeed() {
         .update({ is_read: true })
         .neq("user_id", aaravId);
 
-      // Keep aarav_dev's notifications unread
+      // Mark all of aarav_dev read first, then leave latest 4 unread
       await supabase
         .from("notifications")
-        .update({ is_read: false })
+        .update({ is_read: true })
         .eq("user_id", aaravId);
+
+      const { data: latest4 } = await supabase
+        .from("notifications")
+        .select("id")
+        .eq("user_id", aaravId)
+        .order("created_at", { ascending: false })
+        .limit(4);
+
+      if (latest4 && latest4.length > 0) {
+        await supabase
+          .from("notifications")
+          .update({ is_read: false })
+          .in("id", latest4.map((n) => n.id));
+      }
 
       const { count: aaravUnreadCount } = await supabase
         .from("notifications")
